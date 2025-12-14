@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Makeup Station Mirror Validator</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; color: #333; }
+        .container { display: flex; flex-direction: column; gap: 20px; max-width: 1000px; margin: 0 auto; }
+        
+        /* Header / Instructions */
+        .header { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .header h1 { margin: 0 0 10px 0; font-size: 1.5rem; }
+        .header p { margin: 5px 0; line-height: 1.4; color: #555; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }
+        .pass { background: #d4edda; color: #155724; }
+        .fail { background: #f8d7da; color: #721c24; }
+        .clash { background: #fff3cd; color: #856404; }
+
+        /* Main Simulation Area */
+        .sim-layout { display: flex; flex-wrap: wrap; gap: 20px; }
+        
+        /* Canvas */
+        .canvas-wrapper { position: relative; background: #fff; border: 1px solid #ccc; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        canvas { display: block; cursor: crosshair; }
+        
+        /* Controls */
+        .controls { flex: 1; min-width: 300px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .control-group { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        .control-group:last-child { border-bottom: none; }
+        .control-group h3 { margin: 0 0 10px 0; font-size: 1rem; color: #444; }
+        
+        label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9rem; }
+        input[type=range] { flex: 1; margin: 0 10px; }
+        span.val { width: 40px; text-align: right; font-family: monospace; }
+        
+        .status-panel { margin-top: 10px; padding: 15px; background: #fafafa; border: 1px solid #ddd; border-radius: 4px; }
+        .status-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .status-row strong { font-weight: 600; }
+        
+    </style>
+</head>
+<body>
+
+<!-- 
+    SIMULATION DOCUMENTATION
+
+    Goal: 
+    Validate if a 3-mirror setup allows a seated user to see the back of their head.
+    
+    Coordinate System:
+    - Units: Inches
+    - Origin (0,0): Intersection of Back Wall and Left Wall.
+    - X Axis: Along the back wall to the right.
+    - Y Axis: Perpendicular to back wall (away from wall).
+    
+    Geometry (Fixed per Prompt):
+    - Back Wall: Y = 0
+    - Left Wall: X = 0, Y goes from 0 to 11
+    - Central Mirror: On Y=0, X from 7 to 30 (Width 23)
+    - Desk: Rect from (0,0) to (29, 20)
+    
+    Geometry (Mirrors):
+    - Dimensions based on "Winston Porter Corrente Pivot-N-View": ~14" Wide.
+    - Prompt Constraint: Pivot Axis Y = 15" from wall. 
+    - Mirror pivots around its center at Y=15.
+    
+    Optics Logic:
+    1. Define "Target": The back semi-circle of the head.
+    2. Define "Eye": A point near the front of the head.
+    3. Calculate "Virtual Eye" position:
+       - Reflect Eye across Central Mirror -> E'
+       - Reflect E' across Side Mirror -> E''
+    4. Cast rays from E'' to points on the back of the head.
+    5. If a ray intersects the Side Mirror AND the reflection intersects the Central Mirror without occlusion, it is visible.
+    
+    Usage:
+    - Use sliders to move mirror mounts and rotate angles.
+    - Drag the head (circle) to simulate leaning/shifting.
+    - PASS means >20% of the back of the head is visible.
+-->
+
+<div class="container">
+    <div class="header">
+        <h1>Makeup Station Validator</h1>
+        <p><strong>Instructions:</strong> Drag the head to move the person. Use sliders to adjust mirror positions. <br>
+        <strong>Goal:</strong> Green rays indicate the back of your head is visible through the double reflection (Side Mirror → Central Mirror → Eye).</p>
+    </div>
+
+    <div class="sim-layout">
+        <div class="canvas-wrapper">
+            <canvas id="simCanvas" width="600" height="500"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <h3>Left Mirror (Pivot N View)</h3>
+                <label>Mount X Position <input type="range" id="lmX" min="0" max="6.5" step="0.1" value="3"><span class="val" id="val-lmX">3.0"</span></label>
+                <label>Yaw Angle <input type="range" id="lmAng" min="-60" max="60" step="1" value="-30"><span class="val" id="val-lmAng">-30°</span></label>
+            </div>
+
+            <div class="control-group">
+                <h3>Right Mirror (Pivot N View)</h3>
+                <label>Mount X Position <input type="range" id="rmX" min="30.5" max="50" step="0.1" value="33"><span class="val" id="val-rmX">33.0"</span></label>
+                <label>Yaw Angle <input type="range" id="rmAng" min="-60" max="60" step="1" value="30"><span class="val" id="val-rmAng">30°</span></label>
+            </div>
+
+            <div class="control-group">
+                <h3>Person</h3>
+                <label>Head X <input type="range" id="headX" min="10" max="25" step="0.5" value="18.5"><span class="val" id="val-headX">18.5"</span></label>
+                <label>Head Y (Lean) <input type="range" id="headY" min="8" max="25" step="0.5" value="14"><span class="val" id="val-headY">14.0"</span></label>
+                <div style="font-size: 0.8em; color: #666; margin-top:5px;">(Or drag head on canvas)</div>
+            </div>
+
+            <div class="status-panel">
+                <div class="status-row">
+                    <span>Left Vis:</span>
+                    <span id="stat-left">0%</span>
+                </div>
+                <div class="status-row">
+                    <span>Right Vis:</span>
+                    <span id="stat-right">0%</span>
+                </div>
+                <div class="status-row">
+                    <span>Physical Clash:</span>
+                    <span id="stat-clash">None</span>
+                </div>
+                <div style="margin-top: 10px; text-align: center;">
+                    <span id="final-result" class="badge fail">FAIL</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * GEOMETRY CONSTANTS
+ */
+const SCALE = 12; // Pixels per inch
+const CANVAS_H = 500;
+const CANVAS_W = 600;
+
+// Room Geometry
+const WALL_LEFT_H = 11;
+const WALL_BACK_Y = 0;
+const DESK_W = 29;
+const DESK_D = 20;
+
+const CM_X_START = 7;
+const CM_WIDTH = 23;
+const CM_X_END = CM_X_START + CM_WIDTH;
+
+// Mirror Specs (Wayfair "Pivot N View" approx)
+const SM_WIDTH = 14; 
+const PIVOT_Y_OFFSET = 15; // Fixed per prompt
+
+// Person Specs
+const HEAD_RADIUS = 3.5;
+const EYE_OFFSET = 2.5; // Distance from center of head to eyes (forward)
+
+/**
+ * STATE
+ */
+const state = {
+    lm: { x: 3, ang: -30, width: SM_WIDTH },
+    rm: { x: 33, ang: 30, width: SM_WIDTH },
+    head: { x: 18.5, y: 14 },
+    dragging: false
+};
+
+/**
+ * UTILS
+ */
+function toRad(deg) { return deg * Math.PI / 180; }
+function toDeg(rad) { return rad * 180 / Math.PI; }
+
+// Convert Simulation Coordinates (Inches) to Canvas Coordinates (Pixels)
+// Sim: (0,0) is Bottom-Left of room walls. Y+ is Up (away from wall).
+// Canvas: (0,0) is Top-Left. 
+function sx(inches) { return 50 + inches * SCALE; }
+function sy(inches) { return CANVAS_H - 50 - inches * SCALE; }
+
+/**
+ * MATH
+ */
+// Point rotation around origin
+function rotatePt(x, y, angleRad) {
+    return {
+        x: x * Math.cos(angleRad) - y * Math.sin(angleRad),
+        y: x * Math.sin(angleRad) + y * Math.cos(angleRad)
+    };
+}
+
+// Line intersection
+function getIntersection(p1, p2, p3, p4) {
+    const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (d === 0) return null;
+    
+    const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
+    const u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / d;
+    
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+        return { x: p1.x + t * (p1.x - p2.x), y: p1.y + t * (p1.y - p2.y) };
+    }
+    return null;
+}
+
+// Reflect point across line defined by p1, p2
+function reflectPoint(pt, lineP1, lineP2) {
+    const dx = lineP2.x - lineP1.x;
+    const dy = lineP2.y - lineP1.y;
+    const a = (dx * dx - dy * dy) / (dx * dx + dy * dy);
+    const b = 2 * dx * dy / (dx * dx + dy * dy);
+    const x2 = a * (pt.x - lineP1.x) + b * (pt.y - lineP1.y) + lineP1.x;
+    const y2 = b * (pt.x - lineP1.x) - a * (pt.y - lineP1.y) + lineP1.y;
+    return { x: x2, y: y2 };
+}
+
+/**
+ * CORE LOGIC
+ */
+
+function getMirrorCoords(mx, angleDeg) {
+    // Pivot is at (mx, PIVOT_Y_OFFSET)
+    // Mirror is centered on Pivot
+    const rad = toRad(angleDeg);
+    const halfW = SM_WIDTH / 2;
+    
+    const p1 = {
+        x: mx + halfW * Math.cos(rad),
+        y: PIVOT_Y_OFFSET + halfW * Math.sin(rad)
+    };
+    const p2 = {
+        x: mx - halfW * Math.cos(rad),
+        y: PIVOT_Y_OFFSET - halfW * Math.sin(rad)
+    };
+    
+    return { p1, p2, center: {x: mx, y: PIVOT_Y_OFFSET} };
+}
+
+function checkCollision(mCoords) {
+    // Check intersection with Walls
+    // Back Wall: Line (0,0) to (60,0)
+    // Left Wall: Line (0,0) to (0,11)
+    
+    const walls = [
+        {p1: {x: -10, y: 0}, p2: {x: 60, y: 0}}, // Back
+        {p1: {x: 0, y: 0}, p2: {x: 0, y: 11}}    // Left
+    ];
+    
+    for (let w of walls) {
+        if (getIntersection(mCoords.p1, mCoords.p2, w.p1, w.p2)) return true;
+    }
+    
+    // Check if points are inside wall (negative Y or negative X where wall exists)
+    if (mCoords.p1.y < 0 || mCoords.p2.y < 0) return true;
+    if ((mCoords.p1.x < 0 && mCoords.p1.y < 11) || (mCoords.p2.x < 0 && mCoords.p2.y < 11)) return true;
+    
+    return false;
+}
+
+function calculateVisibility(sideMirrorCoords) {
+    // 1. Define Eye Position
+    // Person faces Y- (towards back wall/central mirror)
+    const eye = { x: state.head.x, y: state.head.y - EYE_OFFSET };
+    
+    // 2. Define Virtual Eye (Double Reflection)
+    // Reflection 1: Central Mirror (Plane Y=0)
+    const e_prime = { x: eye.x, y: -eye.y };
+    
+    // Reflection 2: Side Mirror
+    const e_dbl_prime = reflectPoint(e_prime, sideMirrorCoords.p1, sideMirrorCoords.p2);
+    
+    // 3. Ray Trace to Back of Head
+    // Back of head is the semi-circle from angle 0 to 180 (relative to facing Y+)
+    // Actually, person faces Y- (-90 deg). Back of head is Y+ (+90 deg).
+    // Angles: 0 to 180 degrees standard math (top half of circle)
+    
+    let visiblePoints = [];
+    const numPoints = 20;
+    let hits = 0;
+    
+    for (let i = 0; i <= numPoints; i++) {
+        const theta = Math.PI * (i / numPoints); // 0 to PI
+        const target = {
+            x: state.head.x + HEAD_RADIUS * Math.cos(theta),
+            y: state.head.y + HEAD_RADIUS * Math.sin(theta)
+        };
+        
+        // Ray from Virtual Eye 2 to Target
+        // Logic: Real Ray Path is Target -> Side Mirror -> Central Mirror -> Eye
+        // Geometry equivalence: Line from E'' to Target must intersect Side Mirror.
+        // AND the segment from intersection to E' must intersect Central Mirror.
+        
+        // Check 1: Ray E'' -> Target hits Side Mirror?
+        const hitSide = getIntersection(e_dbl_prime, target, sideMirrorCoords.p1, sideMirrorCoords.p2);
+        
+        if (hitSide) {
+            // Check 2: Ray from hitSide to E' hits Central Mirror?
+            // Central Mirror is segment (7,0) to (30,0)
+            const cmP1 = {x: CM_X_START, y:0};
+            const cmP2 = {x: CM_X_END, y:0};
+            
+            const hitCentral = getIntersection(hitSide, e_prime, cmP1, cmP2);
+            
+            if (hitCentral) {
+                // Check 3: Head Occlusion
+                // Does the ray Target -> SideMirror go through the head?
+                // Does ray SideMirror -> Central go through head? (Unlikely given geometry, but possible)
+                // Simplified: Just ensure ray doesn't hit head circle (except at target)
+                // For this validation, we assume the user positions head such that they don't block their own view 
+                // if the angles work, but strictly we should check.
+                // We'll skip complex self-occlusion for "Target" point itself, assuming hair is surface.
+                
+                // Visualization Data
+                visiblePoints.push({
+                    target: target,
+                    hitSide: hitSide,
+                    hitCentral: hitCentral,
+                    eye: eye
+                });
+                hits++;
+            }
+        }
+    }
+    
+    return { pct: (hits / (numPoints + 1)) * 100, rays: visiblePoints };
+}
+
+/**
+ * DRAWING
+ */
+function draw() {
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw Desk
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(sx(0), sy(20), (DESK_W * SCALE), (20 * SCALE));
+    
+    // Draw Grid/Floor
+    ctx.strokeStyle = '#f0f0f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i=0; i<60; i+=5) { ctx.moveTo(sx(i), 0); ctx.lineTo(sx(i), CANVAS_H); }
+    for(let i=0; i<50; i+=5) { ctx.moveTo(0, sy(i)); ctx.lineTo(CANVAS_W, sy(i)); }
+    ctx.stroke();
+
+    // Draw Walls
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    // Back Wall
+    ctx.moveTo(sx(-5), sy(0)); ctx.lineTo(sx(60), sy(0));
+    // Left Wall
+    ctx.moveTo(sx(0), sy(0)); ctx.lineTo(sx(0), sy(11));
+    ctx.stroke();
+    
+    // Draw Central Mirror
+    ctx.strokeStyle = '#aaddff';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(sx(CM_X_START), sy(0)); ctx.lineTo(sx(CM_X_END), sy(0));
+    ctx.stroke();
+    ctx.strokeStyle = '#0066cc';
+    ctx.lineWidth = 2;
+    ctx.stroke(); // border
+
+    // Calculate Mirrors
+    const lmCoords = getMirrorCoords(state.lm.x, state.lm.ang);
+    const rmCoords = getMirrorCoords(state.rm.x, state.rm.ang);
+    
+    // Check Collisions
+    const lmClash = checkCollision(lmCoords);
+    const rmClash = checkCollision(rmCoords);
+    
+    // Draw Side Mirrors
+    function drawMirror(coords, clash) {
+        ctx.strokeStyle = clash ? '#d32f2f' : '#0066cc';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(sx(coords.p1.x), sy(coords.p1.y));
+        ctx.lineTo(sx(coords.p2.x), sy(coords.p2.y));
+        ctx.stroke();
+        
+        // Pivot Point
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(sx(coords.center.x), sy(coords.center.y), 3, 0, Math.PI*2);
+        ctx.fill();
+        
+        // Pivot Arm (Visual only - from wall to pivot)
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(sx(coords.center.x), sy(0));
+        ctx.lineTo(sx(coords.center.x), sy(coords.center.y));
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+    
+    drawMirror(lmCoords, lmClash);
+    drawMirror(rmCoords, rmClash);
+    
+    // Calculate Optics
+    const lmVis = calculateVisibility(lmCoords);
+    const rmVis = calculateVisibility(rmCoords);
+    
+    // Draw Rays
+    ctx.lineWidth = 1;
+    
+    function drawRays(result) {
+        ctx.strokeStyle = 'rgba(40, 167, 69, 0.4)'; // Green transparent
+        result.rays.forEach(r => {
+            ctx.beginPath();
+            ctx.moveTo(sx(r.target.x), sy(r.target.y));
+            ctx.lineTo(sx(r.hitSide.x), sy(r.hitSide.y));
+            ctx.lineTo(sx(r.hitCentral.x), sy(r.hitCentral.y));
+            ctx.lineTo(sx(r.eye.x), sy(r.eye.y));
+            ctx.stroke();
+        });
+    }
+    
+    if (!lmClash) drawRays(lmVis);
+    if (!rmClash) drawRays(rmVis);
+    
+    // Draw Person
+    ctx.fillStyle = '#ffccaa'; // Skin
+    ctx.beginPath();
+    ctx.arc(sx(state.head.x), sy(state.head.y), HEAD_RADIUS * SCALE, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#d4886a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(sx(state.head.x - 1), sy(state.head.y - EYE_OFFSET), 4, 0, Math.PI*2);
+    ctx.arc(sx(state.head.x + 1), sy(state.head.y - EYE_OFFSET), 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#333'; // Pupils
+    ctx.beginPath();
+    ctx.arc(sx(state.head.x - 1), sy(state.head.y - EYE_OFFSET - 0.5), 1.5, 0, Math.PI*2);
+    ctx.arc(sx(state.head.x + 1), sy(state.head.y - EYE_OFFSET - 0.5), 1.5, 0, Math.PI*2);
+    ctx.fill();
+    
+    // Back of Head Highlight (Target area)
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(sx(state.head.x), sy(state.head.y), HEAD_RADIUS * SCALE + 2, Math.PI, 0); // Top half
+    ctx.stroke();
+
+    // Update UI Stats
+    document.getElementById('stat-left').textContent = Math.round(lmVis.pct) + '%';
+    document.getElementById('stat-right').textContent = Math.round(rmVis.pct) + '%';
+    
+    const clashText = (lmClash ? "Left Mirror " : "") + (rmClash ? "Right Mirror" : "");
+    const clashEl = document.getElementById('stat-clash');
+    clashEl.textContent = clashText || "None";
+    clashEl.style.color = clashText ? "red" : "green";
+    
+    const finalEl = document.getElementById('final-result');
+    const coverage = Math.max(lmVis.pct, rmVis.pct);
+    
+    if (clashText) {
+        finalEl.textContent = "CLASH";
+        finalEl.className = "badge clash";
+    } else if (coverage > 20) {
+        finalEl.textContent = "PASS";
+        finalEl.className = "badge pass";
+    } else {
+        finalEl.textContent = "FAIL";
+        finalEl.className = "badge fail";
+    }
+}
+
+/**
+ * INTERACTION
+ */
+const canvas = document.getElementById('simCanvas');
+
+// Sliders
+['lmX', 'lmAng', 'rmX', 'rmAng', 'headX', 'headY'].forEach(id => {
+    const el = document.getElementById(id);
+    const valEl = document.getElementById('val-' + id);
+    el.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        
+        // Update State
+        if (id === 'lmX') state.lm.x = val;
+        if (id === 'lmAng') state.lm.ang = val;
+        if (id === 'rmX') state.rm.x = val;
+        if (id === 'rmAng') state.rm.ang = val;
+        if (id === 'headX') state.head.x = val;
+        if (id === 'headY') state.head.y = val;
+        
+        // Update Text
+        valEl.textContent = val + (id.includes('Ang') ? '°' : '"');
+        
+        draw();
+    });
+});
+
+// Canvas Dragging (Head)
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left - 50) / SCALE;
+    const my = (CANVAS_H - (e.clientY - rect.top) - 50) / SCALE;
+    
+    const dist = Math.sqrt((mx - state.head.x)**2 + (my - state.head.y)**2);
+    if (dist < HEAD_RADIUS + 1) {
+        state.dragging = true;
+    }
+});
+
+window.addEventListener('mouseup', () => state.dragging = false);
+
+canvas.addEventListener('mousemove', (e) => {
+    if (!state.dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    let mx = (e.clientX - rect.left - 50) / SCALE;
+    let my = (CANVAS_H - (e.clientY - rect.top) - 50) / SCALE;
+    
+    // Constraints
+    mx = Math.max(HEAD_RADIUS, Math.min(60, mx));
+    my = Math.max(HEAD_RADIUS, Math.min(40, my));
+    
+    state.head.x = mx;
+    state.head.y = my;
+    
+    // Sync Sliders
+    document.getElementById('headX').value = mx.toFixed(1);
+    document.getElementById('val-headX').textContent = mx.toFixed(1)+'"';
+    document.getElementById('headY').value = my.toFixed(1);
+    document.getElementById('val-headY').textContent = my.toFixed(1)+'"';
+    
+    draw();
+});
+
+// Init
+draw();
+
+</script>
+</body>
+</html>

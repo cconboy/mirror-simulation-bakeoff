@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Mirror Geometry Simulator</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --panel-bg: #ffffff;
+            --text-color: #333;
+            --accent-color: #2563eb;
+            --success-color: #16a34a;
+            --fail-color: #dc2626;
+            --border-color: #ddd;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--panel-bg);
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        h1 { margin: 0; font-size: 1.2rem; }
+        .instructions { font-size: 0.85rem; color: #666; max-width: 600px; }
+
+        /* Main Layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Controls Panel */
+        .controls {
+            width: 340px;
+            background-color: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            flex-shrink: 0;
+        }
+
+        .control-group {
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            background: #fafafa;
+        }
+
+        .control-group h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+            color: #444;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .input-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+
+        label { flex: 1; }
+        input[type="range"] { flex: 2; margin: 0 10px; }
+        input[type="number"] { width: 50px; padding: 2px; }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            width: 100%;
+            margin-top: 5px;
+        }
+        button:hover { opacity: 0.9; }
+        button.reset-btn { background-color: #64748b; }
+
+        /* Visualization Area */
+        .visualization {
+            flex: 1;
+            position: relative;
+            background-color: #e5e7eb; /* Grid bg */
+            display: flex;
+            flex-direction: column;
+        }
+
+        canvas {
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin: auto;
+            cursor: crosshair;
+        }
+
+        /* HUD Overlay */
+        .hud {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            width: 250px;
+            pointer-events: none;
+        }
+
+        .status-indicator {
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .status-pass { background-color: #dcfce7; color: var(--success-color); border: 1px solid var(--success-color); }
+        .status-fail { background-color: #fee2e2; color: var(--fail-color); border: 1px solid var(--fail-color); }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        .legend {
+            margin-top: 10px;
+            font-size: 0.8rem;
+        }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+
+        /* Toggle Sections */
+        .advanced-controls { display: none; }
+        .show-advanced .advanced-controls { display: block; }
+        
+        .toggle-link {
+            font-size: 0.8rem;
+            color: var(--accent-color);
+            text-decoration: underline;
+            cursor: pointer;
+            text-align: center;
+            display: block;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div>
+        <h1>3-Mirror Station Simulator</h1>
+        <div class="instructions">Adjust mirror positions to see the back of your head. Path: Eye → Side Mirror → Center Mirror → Back of Head.</div>
+    </div>
+</header>
+
+<div class="main-container">
+    <div class="controls" id="controlsPanel">
+        
+        <div class="control-group">
+            <h3>Left Side Mirror (Pivot)</h3>
+            <div class="input-row">
+                <label>X (in)</label>
+                <input type="range" id="lmX" min="-30" max="0" step="0.5">
+                <input type="number" id="lmX_val">
+            </div>
+            <div class="input-row">
+                <label>Y (in)</label>
+                <input type="range" id="lmY" min="0" max="40" step="0.5">
+                <input type="number" id="lmY_val">
+            </div>
+            <div class="input-row">
+                <label>Yaw (°)</label>
+                <input type="range" id="lmAng" min="-90" max="90" step="1">
+                <input type="number" id="lmAng_val">
+            </div>
+            <div class="input-row">
+                <label>Tilt (°)</label>
+                <input type="range" id="lmPitch" min="-20" max="20" step="1">
+                <input type="number" id="lmPitch_val">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Right Side Mirror (Pivot)</h3>
+            <div class="input-row">
+                <label>X (in)</label>
+                <input type="range" id="rmX" min="0" max="30" step="0.5">
+                <input type="number" id="rmX_val">
+            </div>
+            <div class="input-row">
+                <label>Y (in)</label>
+                <input type="range" id="rmY" min="0" max="40" step="0.5">
+                <input type="number" id="rmY_val">
+            </div>
+            <div class="input-row">
+                <label>Yaw (°)</label>
+                <input type="range" id="rmAng" min="-90" max="90" step="1">
+                <input type="number" id="rmAng_val">
+            </div>
+            <div class="input-row">
+                <label>Tilt (°)</label>
+                <input type="range" id="rmPitch" min="-20" max="20" step="1">
+                <input type="number" id="rmPitch_val">
+            </div>
+        </div>
+
+        <div class="toggle-link" onclick="document.getElementById('controlsPanel').classList.toggle('show-advanced')">Show/Hide Advanced Settings</div>
+
+        <div class="advanced-controls">
+            <div class="control-group">
+                <h3>User Position</h3>
+                <div class="input-row">
+                    <label>Dist from Wall</label>
+                    <input type="range" id="headY" min="10" max="40" step="1">
+                    <input type="number" id="headY_val">
+                </div>
+                <div class="input-row">
+                    <label>Shift L/R</label>
+                    <input type="range" id="headX" min="-10" max="10" step="1">
+                    <input type="number" id="headX_val">
+                </div>
+                 <div class="input-row">
+                    <label>Eye Height</label>
+                    <input type="range" id="eyeH" min="40" max="60" step="0.5">
+                    <input type="number" id="eyeH_val">
+                </div>
+            </div>
+            
+             <div class="control-group">
+                <h3>Mirror Dims (WxH)</h3>
+                <div class="input-row">
+                    <label>Side W</label>
+                    <input type="number" id="sideW" value="14">
+                </div>
+                <div class="input-row">
+                    <label>Side H</label>
+                    <input type="number" id="sideH" value="22">
+                </div>
+                 <div class="input-row">
+                    <label>Side Mount Z</label>
+                    <input type="number" id="sideZ" value="48" title="Height of pivot center from floor">
+                </div>
+            </div>
+        </div>
+
+        <button class="reset-btn" onclick="resetDefaults()">Reset to Defaults</button>
+    </div>
+
+    <div class="visualization">
+        <canvas id="simCanvas"></canvas>
+        <div class="hud">
+            <div id="statusBox" class="status-indicator">calculating...</div>
+            <div class="metric">
+                <span>Coverage (Back):</span>
+                <span id="coverageVal">0%</span>
+            </div>
+            <div class="metric">
+                <span>Vertical Check:</span>
+                <span id="vertVal" style="font-weight:bold">--</span>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><div class="dot" style="background:green"></div> Valid Sight Line</div>
+                <div class="legend-item"><div class="dot" style="background:#ddd"></div> Mirror/Desk</div>
+                <div class="legend-item"><div class="dot" style="background:#333; border:1px solid white"></div> Head/Eyes</div>
+                <div class="legend-item"><div class="dot" style="background:magenta"></div> Target (Back)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * 3-Mirror Geometry Simulator
+ * 
+ * Coordinate System:
+ * Origin (0,0) is at the center of the BACK WALL on the floor (Plan View).
+ * X+ is Right, X- is Left.
+ * Y+ is Towards the user (away from wall).
+ * 
+ * Dimensions (Inches):
+ * Central Mirror: 23W x 29H. Centered at X=0, Y=0 (Wall).
+ * Short Wall: Left side. X = -11.5 (mirror edge) - 7 = -18.5. 
+ *             Extends Y=0 to Y=11.
+ * Desk: Depth 20. Width 29. Centered X.
+ */
+
+// --- Configuration & State ---
+const CONFIG = {
+    wallLeftX: -18.5,
+    wallLeftDepth: 11,
+    centerMirrorW: 23,
+    centerMirrorH: 29,
+    centerMirrorBaseH: 40, // Height of bottom edge from floor (assumption: vanity height 30 + 10 gap? or just standard eye level)
+                           // Let's assume eye level ~48". Center mirror usually centered around that.
+                           // Let's say center mirror center is at 48". 
+                           // Top = 48 + 14.5 = 62.5. Bottom = 48 - 14.5 = 33.5.
+    centerMirrorCenterZ: 48,
+    deskDepth: 20,
+    deskWidth: 29,
+    headRadius: 3.5, // Approx 7 inch wide head
+};
+
+const state = {
+    // Left Mirror
+    lm: { x: -18.5, y: 11, w: 14, h: 22, ang: 45, pitch: 0, z: 48 }, // mounted on end of short wall
+    // Right Mirror
+    rm: { x: 18, y: 5, w: 14, h: 22, ang: -45, pitch: 0, z: 48 },    // floating in space (stand/wall)
+    // Head
+    head: { x: 0, y: 26, z: 48 }, // Eye height
+};
+
+// Canvas references
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+let scale = 15; // pixels per inch
+const originOffset = { x: 0, y: 0 };
+
+// --- Math Helpers ---
+
+const degToRad = (d) => d * (Math.PI / 180);
+
+// Rotate point around pivot
+function rotatePoint(px, py, cx, cy, angleDeg) {
+    const rad = degToRad(angleDeg);
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dx = px - cx;
+    const dy = py - cy;
+    return {
+        x: cx + dx * cos - dy * sin,
+        y: cy + dx * sin + dy * cos
+    };
+}
+
+// Line intersection (Ray casting)
+// Returns {x, y} or null
+function intersect(p1, p2, p3, p4) {
+    const denom = (p4.y - p3.y) * (p2.x - p1.x) - (p4.x - p3.x) * (p2.y - p1.y);
+    if (denom == 0) return null;
+    const ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / denom;
+    const ub = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / denom;
+    if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+        return {
+            x: p1.x + ua * (p2.x - p1.x),
+            y: p1.y + ua * (p2.y - p1.y),
+            t: ua // fraction along p1-p2
+        };
+    }
+    return null;
+}
+
+// Reflect point P across line AB
+function reflectPointAcrossLine(px, py, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+    // Closest point on line (infinite)
+    const cx = ax + t * dx;
+    const cy = ay + t * dy;
+    // P' = C + (C - P) = 2C - P
+    return {
+        x: 2 * cx - px,
+        y: 2 * cy - py
+    };
+}
+
+// --- Initialization & UI Binding ---
+
+function init() {
+    bindInputs();
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    update();
+}
+
+function bindInputs() {
+    const bind = (id, obj, key) => {
+        const el = document.getElementById(id);
+        const valEl = document.getElementById(id + '_val');
+        
+        // Update input from state
+        if(el.type === "range" || el.type === "number") el.value = obj[key];
+        if(valEl) valEl.value = obj[key];
+
+        // Listener
+        const handler = (e) => {
+            const val = parseFloat(e.target.value);
+            obj[key] = val;
+            if(el) el.value = val;
+            if(valEl) valEl.value = val;
+            update();
+        };
+        el.addEventListener('input', handler);
+        if(valEl) valEl.addEventListener('input', handler);
+    };
+
+    // Left Mirror
+    bind('lmX', state.lm, 'x');
+    bind('lmY', state.lm, 'y');
+    bind('lmAng', state.lm, 'ang');
+    bind('lmPitch', state.lm, 'pitch');
+
+    // Right Mirror
+    bind('rmX', state.rm, 'x');
+    bind('rmY', state.rm, 'y');
+    bind('rmAng', state.rm, 'ang');
+    bind('rmPitch', state.rm, 'pitch');
+
+    // Head
+    bind('headX', state.head, 'x');
+    bind('headY', state.head, 'y');
+    bind('eyeH', state.head, 'z');
+
+    // Advanced
+    bind('sideW', state.lm, 'w'); // Share width for simplicity or separate
+    bind('sideH', state.lm, 'h');
+    bind('sideZ', state.lm, 'z');
+    
+    // Sync Right mirror dims
+    document.getElementById('sideW').addEventListener('input', (e)=> state.rm.w = parseFloat(e.target.value));
+    document.getElementById('sideH').addEventListener('input', (e)=> state.rm.h = parseFloat(e.target.value));
+    document.getElementById('sideZ').addEventListener('input', (e)=> state.rm.z = parseFloat(e.target.value));
+}
+
+function resetDefaults() {
+    state.lm.x = -18.5; state.lm.y = 11; state.lm.ang = 35; state.lm.pitch = 0;
+    state.rm.x = 14.5; state.rm.y = 10; state.rm.ang = -35; state.rm.pitch = 0;
+    state.head.x = 0; state.head.y = 26; state.head.z = 48;
+    
+    // Refresh UI
+    const event = new Event('input');
+    ['lmX','lmY','lmAng','lmPitch','rmX','rmY','rmAng','rmPitch','headX','headY','eyeH'].forEach(id => {
+        const el = document.getElementById(id);
+        el.value = (id.includes('lm')) ? state.lm[getInputKey(id)] : 
+                   (id.includes('rm')) ? state.rm[getInputKey(id)] : state.head[getInputKey(id)];
+        el.dispatchEvent(event);
+    });
+    update();
+}
+
+function getInputKey(id) {
+    if(id.includes('Ang')) return 'ang';
+    if(id.includes('Pitch')) return 'pitch';
+    if(id.includes('X')) return 'x';
+    if(id.includes('Y')) return 'y';
+    if(id.includes('H')) return 'z';
+    return '';
+}
+
+function resizeCanvas() {
+    canvas.width = canvas.parentElement.clientWidth;
+    canvas.height = canvas.parentElement.clientHeight;
+    originOffset.x = canvas.width / 2;
+    originOffset.y = 50; // top padding
+    update();
+}
+
+// --- Core Simulation Logic ---
+
+function getMirrorSegment(mObj) {
+    // Pivot is at mObj.x, mObj.y
+    // Mirror width w.
+    // Assume pivot is at the CENTER of the mirror back for rotation, 
+    // OR pivot is a hinge on the edge. 
+    // Prompt says "Pivot-N-View". Usually hinge on wall.
+    // Let's assume (x,y) is the hinge. The mirror extends width W away.
+    // Default angle 0 = parallel to wall? No, let's say angle determines vector.
+    
+    const rad = degToRad(mObj.ang);
+    // Start at hinge
+    const p1 = { x: mObj.x, y: mObj.y };
+    // End at width
+    // To make it intuitive: 0 deg = along X axis? 
+    // Let's make 0 deg = Flat against Back Wall (approx).
+    // Actually, let's just use standard polar: 0 = Right, 90 = Down (Screen Y+).
+    // For Left mirror, hinge is at Left (-18.5). If flat against side wall, angle is 90.
+    // Let's just calculate p2 based on angle.
+    
+    // Correction: "Pivot" usually implies the mirror is offset. 
+    // But for this simulation, a line segment P1-P2 where P1 is the user coordinate is simplest.
+    
+    const p2 = {
+        x: p1.x + mObj.w * Math.cos(rad),
+        y: p1.y + mObj.w * Math.sin(rad)
+    };
+    return { p1, p2, obj: mObj };
+}
+
+function checkVisibility(mirrorKey) {
+    const sideMirror = (mirrorKey === 'left') ? state.lm : state.rm;
+    const centerMirror = { 
+        x: 0, y: 0, w: CONFIG.centerMirrorW, 
+        p1: {x: -CONFIG.centerMirrorW/2, y: 0}, 
+        p2: {x: CONFIG.centerMirrorW/2, y: 0} 
+    };
+
+    // 1. Define Eye and Target
+    const eye = { x: state.head.x, y: state.head.y - CONFIG.headRadius }; // Front of head
+    
+    // We test 3 points on the back of the head
+    const targets = [
+        { x: state.head.x, y: state.head.y + CONFIG.headRadius, label: 'Center' }, // Center Back
+        { x: state.head.x - 2, y: state.head.y + CONFIG.headRadius - 0.5, label: 'Left' }, // Left Back
+        { x: state.head.x + 2, y: state.head.y + CONFIG.headRadius - 0.5, label: 'Right' }  // Right Back
+    ];
+
+    const sideSeg = getMirrorSegment(sideMirror);
+
+    const validPaths = [];
+    const failedPaths = [];
+
+    // Path: Eye -> SideMirror -> CenterMirror -> Target
+    // Reverse Ray Trace: 
+    // 1. Virtual Target T' = Reflect Target across Center Mirror
+    // 2. Virtual Target T'' = Reflect T' across Side Mirror
+    // 3. Connect Eye to T''.
+    // 4. Check Intersections.
+
+    targets.forEach(target => {
+        // Step 1: Reflect Target across Center Mirror (Line y=0)
+        // Center Mirror is on X-axis. Reflection is simple (x, -y).
+        const t_prime = { x: target.x, y: -target.y };
+
+        // Step 2: Reflect T' across Side Mirror Line
+        const t_double_prime = reflectPointAcrossLine(
+            t_prime.x, t_prime.y, 
+            sideSeg.p1.x, sideSeg.p1.y, 
+            sideSeg.p2.x, sideSeg.p2.y
+        );
+
+        // Step 3: Ray Eye -> T''
+        // Does it hit the Side Mirror segment?
+        const hitSide = intersect(eye, t_double_prime, sideSeg.p1, sideSeg.p2);
+
+        if (hitSide) {
+            // Ray travels from Eye to HitSide.
+            // Then from HitSide to T'. 
+            // Does path HitSide -> T' hit Center Mirror?
+            const hitCenter = intersect(hitSide, t_prime, centerMirror.p1, centerMirror.p2);
+
+            if (hitCenter) {
+                // Ray travels from HitSide to HitCenter.
+                // Then from HitCenter to Target.
+                
+                // Final Check: Occlusion by Head?
+                // Ray 1: Eye -> SideMirror (Close to head, but Eye is on head. Usually clear unless arm blocks)
+                // Ray 2: Side -> Center (Could be blocked by head?)
+                // Ray 3: Center -> Target (Very short, behind head. Center mirror is usually unobstructed)
+                
+                // Let's check if Segment (HitSide -> HitCenter) intersects Head Circle.
+                // Simple approx: distance from line segment to head center < radius.
+                // However, the ray goes *around* the head usually.
+                
+                if(!isBlockedByHead(hitSide, hitCenter, state.head) && 
+                   !isBlockedByHead(eye, hitSide, state.head)) {
+                    
+                    // VALID PATH
+                    validPaths.push({
+                        points: [eye, hitSide, hitCenter, target],
+                        targetLabel: target.label,
+                        // Store Vertical info for 2nd pass
+                        lengths: {
+                            l1: dist(eye, hitSide),
+                            l2: dist(hitSide, hitCenter),
+                            l3: dist(hitCenter, target)
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+        failedPaths.push(target); // Just tracking count
+    });
+
+    return { validPaths, totalTargets: targets.length };
+}
+
+// Check if line segment ab intersects circle (hx, hy, r)
+function isBlockedByHead(a, b, head) {
+    // Vector AB
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const ux = dx/len;
+    const uy = dy/len;
+    
+    // Project Circle Center onto line
+    // Vector AC
+    const acx = head.x - a.x;
+    const acy = head.y - a.y;
+    const proj = acx * ux + acy * uy;
+    
+    // Closest point on line
+    let closest;
+    if(proj < 0) closest = a;
+    else if(proj > len) closest = b;
+    else closest = { x: a.x + proj*ux, y: a.y + proj*uy };
+    
+    const distToHead = dist(closest, head);
+    
+    // Use a slightly smaller radius for occlusion to be forgiving (glancing rays)
+    return distToHead < (CONFIG.headRadius * 0.9);
+}
+
+function dist(p1, p2) {
+    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+}
+
+// Vertical Geometry Check
+function checkVertical(path, sideM, centerH, centerZ, eyeZ) {
+    if(!path) return false;
+    
+    // Path lengths
+    const { l1, l2, l3 } = path.lengths;
+    const totalDist = l1 + l2 + l3;
+    
+    // Target is back of head (same height as eyes approx, maybe slightly higher/lower?)
+    // Let's assume Target Height = Eye Height for simplicity of "seeing own level".
+    const targetH = eyeZ; 
+    
+    // Unfolded geometry: straight line from Eye to Virtual Target.
+    // In 2D side view, Eye is at 0, Target is at TotalDist.
+    // Heights are EyeH and TargetH.
+    // Since EyeH ~= TargetH, the ray is horizontal.
+    // We just need to check if EyeH is within the vertical bounds of both mirrors.
+    
+    // Pitch affects the Side Mirror.
+    // If side mirror is tilted, the virtual image moves up/down.
+    // Vertical Angle alpha.
+    // Height at distance d = EyeH + d * tan(alpha).
+    
+    // Simplified Pitch Logic:
+    // Ray vector V = (0, 0, -1) (Looking flat).
+    // Side Mirror Normal has pitch.
+    // This is getting complex for a 2D sim, let's approximation.
+    
+    // 1. Ray from Eye hits Side Mirror.
+    // Height at Side Mirror = EyeH (assuming flat ray for now).
+    // Side Mirror Vertical Range: [sideZ - sideH/2, sideZ + sideH/2].
+    if (eyeZ < sideM.z - sideM.h/2 || eyeZ > sideM.z + sideM.h/2) return "Eye too high/low for Side Mirror";
+
+    // 2. Reflection off Side Mirror.
+    // Pitch P adds 2*P to the vertical ray angle.
+    // Ray slope m = tan(2 * pitch).
+    // Ray travels l2 distance to Center Mirror.
+    // Height at Center = EyeH + l2 * tan(2 * degToRad(sideM.pitch));
+    
+    const hAtCenter = eyeZ - l2 * Math.tan(2 * degToRad(sideM.pitch)); // - because l2 goes "away" into depth? 
+    // Actually, l2 is horizontal distance. If mirror tilts UP (positive pitch), ray goes DOWN?
+    // Let's assume Pitch + means mirror looks up. Normal points up. 
+    // Incoming ray flat. Reflected ray goes UP.
+    // Height increases.
+    
+    // Center Mirror Vertical Range:
+    const cmTop = CONFIG.centerMirrorCenterZ + CONFIG.centerMirrorH/2;
+    const cmBot = CONFIG.centerMirrorCenterZ - CONFIG.centerMirrorH/2;
+    
+    if (hAtCenter > cmTop || hAtCenter < cmBot) return "Ray misses Center Mirror Vertically";
+    
+    // 3. Reflection off Center Mirror (Vertical).
+    // Center mirror is flat (Pitch 0).
+    // It preserves the vertical slope, just reflects direction.
+    // Ray travels l3 to target.
+    // Height at Target = hAtCenter + l3 * tan(2*pitch).
+    // Check if this height hits head?
+    
+    // For Pass/Fail, mainly checking if it hits the glass is key.
+    return true;
+}
+
+// --- Rendering ---
+
+function draw() {
+    // Clear
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    ctx.translate(originOffset.x, originOffset.y);
+    ctx.scale(scale, scale);
+    
+    // Draw Floor Grid (every 6 inches)
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1/scale;
+    for(let i=-60; i<=60; i+=6) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 60); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-60, i+20); ctx.lineTo(60, i+20); ctx.stroke();
+    }
+
+    // 1. Draw Geometry
+    drawRoom();
+    
+    // 2. Draw Mirrors
+    const leftSeg = getMirrorSegment(state.lm);
+    drawMirror(leftSeg, "L");
+    
+    const rightSeg = getMirrorSegment(state.rm);
+    drawMirror(rightSeg, "R");
+
+    // 3. Draw Head
+    drawHead();
+
+    // 4. Draw Rays & Logic
+    // We check BOTH mirrors to see if either provides a view
+    const leftRes = checkVisibility('left');
+    const rightRes = checkVisibility('right');
+    
+    // Draw Valid Paths
+    let totalPaths = 0;
+    let validCount = 0;
+    
+    // Render Left Mirror Paths
+    leftRes.validPaths.forEach(path => drawPath(path, '#16a34a'));
+    validCount += leftRes.validPaths.length;
+    totalPaths += leftRes.totalTargets;
+
+    // Render Right Mirror Paths
+    rightRes.validPaths.forEach(path => drawPath(path, '#16a34a'));
+    validCount += rightRes.validPaths.length;
+    totalPaths += rightRes.totalTargets; // Actually targets are same, so we count unique visible regions?
+    
+    // Update HUD
+    updateHUD(validCount, 3, leftRes.validPaths[0], state.lm); // Just using left for vertical check example
+
+    ctx.restore();
+}
+
+function drawRoom() {
+    ctx.lineWidth = 2/scale;
+    ctx.lineCap = 'round';
+    
+    // Back Wall
+    ctx.strokeStyle = '#333';
+    ctx.beginPath();
+    ctx.moveTo(-50, 0);
+    ctx.lineTo(50, 0);
+    ctx.stroke();
+
+    // Left Short Wall
+    ctx.beginPath();
+    ctx.moveTo(CONFIG.wallLeftX, 0);
+    ctx.lineTo(CONFIG.wallLeftX, CONFIG.wallLeftDepth);
+    ctx.stroke();
+
+    // Center Mirror
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 4/scale;
+    ctx.beginPath();
+    ctx.moveTo(-CONFIG.centerMirrorW/2, 0);
+    ctx.lineTo(CONFIG.centerMirrorW/2, 0);
+    ctx.stroke();
+    
+    // Desk
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.1)';
+    ctx.strokeStyle = 'rgba(139, 69, 19, 0.3)';
+    ctx.lineWidth = 1/scale;
+    const deskX = -CONFIG.deskWidth/2;
+    ctx.fillRect(deskX, 0, CONFIG.deskWidth, CONFIG.deskDepth);
+    ctx.strokeRect(deskX, 0, CONFIG.deskWidth, CONFIG.deskDepth);
+}
+
+function drawMirror(seg, label) {
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 3/scale;
+    ctx.beginPath();
+    ctx.moveTo(seg.p1.x, seg.p1.y);
+    ctx.lineTo(seg.p2.x, seg.p2.y);
+    ctx.stroke();
+    
+    // Pivot Point
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(seg.p1.x, seg.p1.y, 2/scale, 0, Math.PI*2);
+    ctx.fill();
+}
+
+function drawHead() {
+    const h = state.head;
+    
+    // Head Circle
+    ctx.fillStyle = '#ddd';
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1/scale;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, CONFIG.headRadius, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Eyes (Front)
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(h.x, h.y - CONFIG.headRadius, 1.5/scale, 0, Math.PI*2);
+    ctx.fill();
+    
+    // Target Arc (Back)
+    ctx.strokeStyle = 'magenta';
+    ctx.lineWidth = 2/scale;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, CONFIG.headRadius, degToRad(80), degToRad(100)); // approx back
+    ctx.stroke();
+}
+
+function drawPath(path, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1/scale;
+    ctx.setLineDash([2/scale, 2/scale]); // dashed for light rays
+    
+    ctx.beginPath();
+    ctx.moveTo(path.points[0].x, path.points[0].y);
+    for(let i=1; i<path.points.length; i++) {
+        ctx.lineTo(path.points[i].x, path.points[i].y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+}
+
+function updateHUD(validCount, totalTargets, samplePath, sideMirror) {
+    const box = document.getElementById('statusBox');
+    const cov = document.getElementById('coverageVal');
+    const vert = document.getElementById('vertVal');
+
+    const pct = Math.round((validCount / totalTargets) * 100); // Only checking one mirror set here essentially
+    // If we have 2 side mirrors, max score is > 100%? No, let's just cap or show basic logic.
+    // For simplicity, if ANY mirror shows the back, it works.
+    
+    // Coverage Logic: Did we see Center, Left, Right of back head?
+    // This is simplified.
+    
+    cov.innerText = (validCount > 0) ? "PASS" : "FAIL";
+    
+    if (validCount > 0) {
+        box.innerText = "PASS";
+        box.className = "status-indicator status-pass";
+    } else {
+        box.innerText = "FAIL";
+        box.className = "status-indicator status-fail";
+    }
+    
+    // Vertical Check
+    if(samplePath) {
+        const vCheck = checkVertical(samplePath, sideMirror, CONFIG.centerMirrorH, CONFIG.centerMirrorCenterZ, state.head.z);
+        if (vCheck === true) {
+            vert.innerText = "OK";
+            vert.style.color = "green";
+        } else {
+            vert.innerText = "FAIL";
+            vert.style.color = "red";
+            // Show toast/subtitle?
+            console.log(vCheck);
+        }
+    } else {
+        vert.innerText = "--";
+        vert.style.color = "#333";
+    }
+}
+
+// Loop
+function update() {
+    draw();
+}
+
+// Start
+init();
+
+</script>
+</body>
+</html>

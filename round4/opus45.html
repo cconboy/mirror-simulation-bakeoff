@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pivot Mirror Configuration Simulator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #16213e;
+            padding: 10px 20px;
+            border-bottom: 2px solid #0f3460;
+        }
+        .header h1 {
+            font-size: 1.3em;
+            color: #e94560;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .control-panel {
+            width: 320px;
+            min-width: 320px;
+            background: #16213e;
+            padding: 15px;
+            overflow-y: auto;
+            border-right: 2px solid #0f3460;
+        }
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            overflow: hidden;
+        }
+        canvas {
+            background: #0f0f1a;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            padding: 10px 0;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .status-indicator {
+            padding: 8px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .status-pass {
+            background: #28a745;
+            color: white;
+        }
+        .status-fail {
+            background: #dc3545;
+            color: white;
+        }
+        .coverage-display {
+            font-size: 1.1em;
+        }
+        .coverage-value {
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+        .control-section {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            border: 1px solid #0f3460;
+        }
+        .control-section h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+            font-size: 0.95em;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 5px;
+        }
+        .control-group {
+            margin-bottom: 10px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 0.85em;
+            color: #aaa;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            flex: 1;
+            height: 6px;
+            -webkit-appearance: none;
+            background: #0f3460;
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .value-display {
+            min-width: 55px;
+            text-align: right;
+            font-family: monospace;
+            color: #4ecdc4;
+        }
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #ff6b6b;
+        }
+        .collapsible-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .collapsible-header::after {
+            content: '▼';
+            font-size: 0.7em;
+            transition: transform 0.2s;
+        }
+        .collapsible-header.collapsed::after {
+            transform: rotate(-90deg);
+        }
+        .collapsible-content {
+            margin-top: 10px;
+        }
+        .collapsible-content.hidden {
+            display: none;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #e94560;
+        }
+        .assumptions {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 0.8em;
+            color: #888;
+        }
+        .assumptions h4 {
+            color: #e94560;
+            margin-bottom: 8px;
+        }
+        .assumptions ul {
+            padding-left: 18px;
+        }
+        .assumptions li {
+            margin-bottom: 4px;
+        }
+        .legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            font-size: 0.85em;
+            padding: 5px 0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-swatch {
+            width: 20px;
+            height: 4px;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Pivot Mirror Configuration Simulator (Top-Down View)</h1>
+    </div>
+    
+    <div class="main-container">
+        <div class="control-panel">
+            <div class="status-bar">
+                <div id="statusIndicator" class="status-indicator status-fail">FAIL</div>
+                <div class="coverage-display">Coverage: <span id="coverageValue" class="coverage-value">0%</span></div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Left Mirror</h3>
+                <div class="control-group">
+                    <label>Mount Position X (inches from left wall)</label>
+                    <div class="control-row">
+                        <input type="range" id="leftMirrorX" min="0" max="6" step="0.1" value="2">
+                        <span class="value-display" id="leftMirrorXVal">2.0"</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Yaw Angle (degrees)</label>
+                    <div class="control-row">
+                        <input type="range" id="leftMirrorYaw" min="-90" max="90" step="1" value="45">
+                        <span class="value-display" id="leftMirrorYawVal">45°</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Right Mirror</h3>
+                <div class="control-group">
+                    <label>Mount Position X (inches from left wall)</label>
+                    <div class="control-row">
+                        <input type="range" id="rightMirrorX" min="31" max="45" step="0.1" value="38">
+                        <span class="value-display" id="rightMirrorXVal">38.0"</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Yaw Angle (degrees)</label>
+                    <div class="control-row">
+                        <input type="range" id="rightMirrorYaw" min="-90" max="90" step="1" value="-45">
+                        <span class="value-display" id="rightMirrorYawVal">-45°</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Head Orientation</h3>
+                <div class="control-group checkbox-group">
+                    <input type="checkbox" id="autoSolveHead" checked>
+                    <label for="autoSolveHead">Auto-solve head yaw</label>
+                </div>
+                <div class="control-group" id="headYawGroup">
+                    <label>Head Yaw (degrees)</label>
+                    <div class="control-row">
+                        <input type="range" id="headYaw" min="-180" max="180" step="1" value="0">
+                        <span class="value-display" id="headYawVal">0°</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <button id="resetBtn">Reset to Defaults</button>
+            </div>
+            
+            <div class="control-section">
+                <div class="collapsible-header collapsed" id="advancedToggle">
+                    <h3 style="margin:0;border:none;padding:0;">Advanced Settings</h3>
+                </div>
+                <div class="collapsible-content hidden" id="advancedContent">
+                    <div class="control-group">
+                        <label>Mirror Reflective Width (inches)</label>
+                        <div class="control-row">
+                            <input type="range" id="mirrorWidth" min="8" max="20" step="0.5" value="14">
+                            <span class="value-display" id="mirrorWidthVal">14.0"</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Mirror Overall Width (inches)</label>
+                        <div class="control-row">
+                            <input type="range" id="mirrorOverallWidth" min="10" max="24" step="0.5" value="16">
+                            <span class="value-display" id="mirrorOverallWidthVal">16.0"</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Bracket Offset from Wall (inches)</label>
+                        <div class="control-row">
+                            <input type="range" id="bracketOffset" min="1" max="6" step="0.25" value="2">
+                            <span class="value-display" id="bracketOffsetVal">2.0"</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Coverage Threshold (%)</label>
+                        <div class="control-row">
+                            <input type="range" id="coverageThreshold" min="10" max="90" step="5" value="50">
+                            <span class="value-display" id="coverageThresholdVal">50%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="assumptions">
+                <h4>Assumptions & Notes</h4>
+                <ul>
+                    <li>Head center is 10" from back wall (head depth ~8", so back of head ~6" from wall)</li>
+                    <li>Head modeled as ellipse: 6.5" wide × 8" deep (typical adult)</li>
+                    <li>Eyes positioned 2.5" forward of head center</li>
+                    <li>Mirror product (Wayfair "Corrente Pivot-N-View"): reflective 14"×22", overall 16"×26"</li>
+                    <li>Product mentions "pivot grommets" but doesn't specify center-pivot; simulation assumes center-pivot bracket model</li>
+                    <li>Bracket offset (default 2") is assumed for wall clearance</li>
+                    <li>Back-of-head target: 7 points along rear 120° arc</li>
+                </ul>
+                <p style="margin-top:8px;"><strong>Implemented reflection paths:</strong></p>
+                <ul>
+                    <li>Eye → Side mirror → Central mirror → Back of head</li>
+                    <li>Eye → Central mirror → Side mirror → Back of head</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="canvas-container">
+            <div class="legend">
+                <div class="legend-item"><div class="legend-swatch" style="background:#28a745;"></div> Successful ray</div>
+                <div class="legend-item"><div class="legend-swatch" style="background:#dc3545;"></div> Failed ray</div>
+                <div class="legend-item"><div class="legend-swatch" style="background:#00bfff;"></div> Central mirror</div>
+                <div class="legend-item"><div class="legend-swatch" style="background:#ff69b4;"></div> Side mirrors</div>
+                <div class="legend-item"><div class="legend-swatch" style="background:#888;"></div> Walls</div>
+            </div>
+            <canvas id="canvas" width="800" height="700"></canvas>
+        </div>
+    </div>
+
+    <script>
+    // ============================================
+    // CONFIGURATION & CONSTANTS
+    // ============================================
+    
+    const CONFIG = {
+        // Fixed geometry (inches)
+        deskDepth: 20,
+        deskWidth: 29,
+        centralMirrorWidth: 23,
+        leftWallLength: 11,  // extends from back wall into room
+        leftWallToMirrorGap: 7,  // from left wall to left edge of central mirror
+        
+        // Derived positions
+        get centralMirrorLeft() { return this.leftWallToMirrorGap; },
+        get centralMirrorRight() { return this.leftWallToMirrorGap + this.centralMirrorWidth; },
+        
+        // Head dimensions (typical adult, plan view)
+        headWidth: 6.5,   // ear to ear
+        headDepth: 8.0,   // front to back
+        headCenterFromWall: 10,  // head center distance from back wall
+        eyeForwardOffset: 2.5,   // eyes forward of head center
+        
+        // Canvas settings
+        scale: 12,  // pixels per inch
+        canvasMargin: 60,
+        
+        // Back-of-head targets: angles in degrees, relative to facing backward (180°)
+        // These define an arc on the back of the head
+        targetAngles: [-60, -40, -20, 0, 20, 40, 60],  // degrees from straight back
+        targetRadius: 3.5,  // radius from head center to back-of-head surface
+    };
+    
+    // ============================================
+    // STATE
+    // ============================================
+    
+    let state = {
+        leftMirror: { x: 2, yaw: 45 },
+        rightMirror: { x: 38, yaw: -45 },
+        headYaw: 0,
+        autoSolveHead: true,
+        mirrorWidth: 14,
+        mirrorOverallWidth: 16,
+        bracketOffset: 2,
+        coverageThreshold: 50,
+    };
+    
+    // ============================================
+    // GEOMETRY UTILITIES
+    // ============================================
+    
+    function degToRad(deg) { return deg * Math.PI / 180; }
+    function radToDeg(rad) { return rad * 180 / Math.PI; }
+    
+    function rotatePoint(px, py, cx, cy, angle) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const dx = px - cx;
+        const dy = py - cy;
+        return {
+            x: cx + dx * cos - dy * sin,
+            y: cy + dx * sin + dy * cos
+        };
+    }
+    
+    // Line segment intersection
+    function lineIntersection(p1, p2, p3, p4) {
+        const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+        if (Math.abs(d) < 1e-10) return null;
+        
+        const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
+        const u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / d;
+        
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            return {
+                x: p1.x + t * (p2.x - p1.x),
+                y: p1.y + t * (p2.y - p1.y),
+                t: t,
+                u: u
+            };
+        }
+        return null;
+    }
+    
+    // Ray-segment intersection (ray starts at origin, direction normalized)
+    function raySegmentIntersection(rayOrigin, rayDir, segStart, segEnd) {
+        const p1 = rayOrigin;
+        const p2 = { x: rayOrigin.x + rayDir.x * 1000, y: rayOrigin.y + rayDir.y * 1000 };
+        const int = lineIntersection(p1, p2, segStart, segEnd);
+        if (int && int.t > 0.001) {
+            return int;
+        }
+        return null;
+    }
+    
+    // Point-to-ellipse distance check (approximate via scaling to circle)
+    function pointInEllipse(px, py, cx, cy, rx, ry, rotation) {
+        // Transform point to ellipse-local coordinates
+        const cos = Math.cos(-rotation);
+        const sin = Math.sin(-rotation);
+        const dx = px - cx;
+        const dy = py - cy;
+        const localX = dx * cos - dy * sin;
+        const localY = dx * sin + dy * cos;
+        
+        // Check if inside ellipse
+        return (localX * localX) / (rx * rx) + (localY * localY) / (ry * ry) <= 1;
+    }
+    
+    // Ray-ellipse intersection
+    function rayEllipseIntersection(rayOrigin, rayDir, cx, cy, rx, ry, rotation) {
+        // Transform ray to ellipse-local coordinates
+        const cos = Math.cos(-rotation);
+        const sin = Math.sin(-rotation);
+        
+        const ox = rayOrigin.x - cx;
+        const oy = rayOrigin.y - cy;
+        const localOx = ox * cos - oy * sin;
+        const localOy = ox * sin + oy * cos;
+        
+        const localDx = rayDir.x * cos - rayDir.y * sin;
+        const localDy = rayDir.x * sin + rayDir.y * cos;
+        
+        // Scale to unit circle
+        const sox = localOx / rx;
+        const soy = localOy / ry;
+        const sdx = localDx / rx;
+        const sdy = localDy / ry;
+        
+        // Solve quadratic for unit circle intersection
+        const a = sdx * sdx + sdy * sdy;
+        const b = 2 * (sox * sdx + soy * sdy);
+        const c = sox * sox + soy * soy - 1;
+        
+        const disc = b * b - 4 * a * c;
+        if (disc < 0) return null;
+        
+        const sqrtDisc = Math.sqrt(disc);
+        const t1 = (-b - sqrtDisc) / (2 * a);
+        const t2 = (-b + sqrtDisc) / (2 * a);
+        
+        let t = null;
+        if (t1 > 0.001) t = t1;
+        else if (t2 > 0.001) t = t2;
+        
+        if (t === null) return null;
+        
+        return {
+            x: rayOrigin.x + rayDir.x * t,
+            y: rayOrigin.y + rayDir.y * t,
+            t: t
+        };
+    }
+    
+    // Reflect vector off surface with given normal
+    function reflectVector(dir, normal) {
+        const dot = dir.x * normal.x + dir.y * normal.y;
+        return {
+            x: dir.x - 2 * dot * normal.x,
+            y: dir.y - 2 * dot * normal.y
+        };
+    }
+    
+    // Get normal vector for a segment (pointing "up"/into room for back wall mirror)
+    function getSegmentNormal(segStart, segEnd, preferredSide) {
+        const dx = segEnd.x - segStart.x;
+        const dy = segEnd.y - segStart.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        // Perpendicular: (-dy, dx) or (dy, -dx)
+        let nx = -dy / len;
+        let ny = dx / len;
+        
+        // Choose normal direction based on preferred side
+        if (preferredSide === 'up' && ny < 0) { nx = -nx; ny = -ny; }
+        if (preferredSide === 'down' && ny > 0) { nx = -nx; ny = -ny; }
+        
+        return { x: nx, y: ny };
+    }
+    
+    // Normalize vector
+    function normalize(v) {
+        const len = Math.sqrt(v.x * v.x + v.y * v.y);
+        return { x: v.x / len, y: v.y / len };
+    }
+    
+    // ============================================
+    // SCENE GEOMETRY
+    // ============================================
+    
+    function getSceneGeometry() {
+        const headYawRad = degToRad(state.headYaw);
+        
+        // Head center position
+        const headCx = CONFIG.centralMirrorLeft + CONFIG.centralMirrorWidth / 2;
+        const headCy = CONFIG.headCenterFromWall;
+        
+        // Eye position (forward of head center)
+        const eyeOffset = CONFIG.eyeForwardOffset;
+        const eyePos = rotatePoint(
+            headCx, 
+            headCy + eyeOffset, 
+            headCx, headCy, 
+            headYawRad
+        );
+        
+        // Back-of-head target points
+        const targets = CONFIG.targetAngles.map(angle => {
+            const totalAngle = degToRad(180 + angle) + headYawRad;
+            return {
+                x: headCx + CONFIG.targetRadius * Math.cos(totalAngle),
+                y: headCy + CONFIG.targetRadius * Math.sin(totalAngle),
+                angle: angle
+            };
+        });
+        
+        // Central mirror segment (on back wall, y = 0)
+        const centralMirror = {
+            start: { x: CONFIG.centralMirrorLeft, y: 0 },
+            end: { x: CONFIG.centralMirrorRight, y: 0 },
+            normal: { x: 0, y: 1 }  // facing into room
+        };
+        
+        // Left short wall segment
+        const leftWall = {
+            start: { x: 0, y: 0 },
+            end: { x: 0, y: CONFIG.leftWallLength }
+        };
+        
+        // Back wall segments (for ray blocking)
+        const backWallLeft = {
+            start: { x: 0, y: 0 },
+            end: { x: CONFIG.centralMirrorLeft, y: 0 }
+        };
+        const backWallRight = {
+            start: { x: CONFIG.centralMirrorRight, y: 0 },
+            end: { x: 50, y: 0 }  // extends to the right
+        };
+        
+        // Side mirrors
+        function getMirrorSegment(mountX, yawDeg, mirrorWidth, bracketOffset) {
+            const pivotX = mountX;
+            const pivotY = bracketOffset;
+            const halfWidth = mirrorWidth / 2;
+            const yawRad = degToRad(yawDeg);
+            
+            // Mirror endpoints relative to pivot
+            const p1 = rotatePoint(pivotX - halfWidth, pivotY, pivotX, pivotY, yawRad);
+            const p2 = rotatePoint(pivotX + halfWidth, pivotY, pivotX, pivotY, yawRad);
+            
+            // Normal points "forward" (into room when yaw=0)
+            let normal = getSegmentNormal(p1, p2, 'up');
+            
+            return {
+                start: p1,
+                end: p2,
+                pivot: { x: pivotX, y: pivotY },
+                normal: normal,
+                yaw: yawDeg
+            };
+        }
+        
+        const leftMirror = getMirrorSegment(
+            state.leftMirror.x, 
+            state.leftMirror.yaw,
+            state.mirrorWidth,
+            state.bracketOffset
+        );
+        
+        const rightMirror = getMirrorSegment(
+            state.rightMirror.x,
+            state.rightMirror.yaw,
+            state.mirrorWidth,
+            state.bracketOffset
+        );
+        
+        return {
+            headCx, headCy, headYawRad,
+            eyePos,
+            targets,
+            centralMirror,
+            leftMirror,
+            rightMirror,
+            leftWall,
+            backWallLeft,
+            backWallRight,
+            headRx: CONFIG.headWidth / 2,
+            headRy: CONFIG.headDepth / 2
+        };
+    }
+    
+    // ============================================
+    // CONSTRAINT CHECKING
+    // ============================================
+    
+    function checkLeftMirrorWallConstraint() {
+        const scene = getSceneGeometry();
+        const mirror = scene.leftMirror;
+        
+        // Check if mirror intersects left wall
+        const wallTop = { x: 0, y: CONFIG.leftWallLength };
+        const wallBottom = { x: 0, y: 0 };
+        
+        // Check both mirror endpoints
+        if (mirror.start.x < 0.1 || mirror.end.x < 0.1) {
+            return false;
+        }
+        
+        // Check if mirror segment crosses wall
+        if (lineIntersection(mirror.start, mirror.end, wallBottom, wallTop)) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // ============================================
+    // RAY TRACING & VISIBILITY
+    // ============================================
+    
+    function isRayBlockedByWalls(rayOrigin, rayEnd, scene) {
+        // Check left wall
+        if (lineIntersection(rayOrigin, rayEnd, scene.leftWall.start, scene.leftWall.end)) {
+            return true;
+        }
+        // Check back wall segments (non-mirror parts)
+        if (lineIntersection(rayOrigin, rayEnd, scene.backWallLeft.start, scene.backWallLeft.end)) {
+            return true;
+        }
+        if (lineIntersection(rayOrigin, rayEnd, scene.backWallRight.start, scene.backWallRight.end)) {
+            return true;
+        }
+        return false;
+    }
+    
+    function isRayBlockedByHead(rayOrigin, rayEnd, scene, excludeStart, excludeEnd) {
+        const dir = normalize({ x: rayEnd.x - rayOrigin.x, y: rayEnd.y - rayOrigin.y });
+        const dist = Math.sqrt((rayEnd.x - rayOrigin.x) ** 2 + (rayEnd.y - rayOrigin.y) ** 2);
+        
+        const hit = rayEllipseIntersection(
+            rayOrigin, dir,
+            scene.headCx, scene.headCy,
+            scene.headRx, scene.headRy,
+            scene.headYawRad
+        );
+        
+        if (hit && hit.t > 0.1 && hit.t < dist - 0.1) {
+            // Check if hit is near start or end (to allow rays starting/ending at head surface)
+            if (excludeStart) {
+                const dStart = Math.sqrt((hit.x - rayOrigin.x) ** 2 + (hit.y - rayOrigin.y) ** 2);
+                if (dStart < 0.5) return false;
+            }
+            if (excludeEnd) {
+                const dEnd = Math.sqrt((hit.x - rayEnd.x) ** 2 + (hit.y - rayEnd.y) ** 2);
+                if (dEnd < 0.5) return false;
+            }
+            return true;
+        }
+        return false;
+    }
+    
+    function findRayMirrorHit(rayOrigin, rayDir, mirror) {
+        const hit = raySegmentIntersection(rayOrigin, rayDir, mirror.start, mirror.end);
+        return hit;
+    }
+    
+    // Check if a ray from point A to point B is valid (not blocked)
+    function isPathClear(from, to, scene, excludeHeadStart, excludeHeadEnd) {
+        if (isRayBlockedByWalls(from, to, scene)) return false;
+        if (isRayBlockedByHead(from, to, scene, excludeHeadStart, excludeHeadEnd)) return false;
+        return true;
+    }
+    
+    // Try reflection path: eye -> mirror1 -> mirror2 -> target
+    function tryReflectionPath(eyePos, mirror1, mirror2, target, scene) {
+        const rays = [];
+        
+        // Ray from eye toward mirror1
+        // We need to find where on mirror1 to aim such that the reflection reaches mirror2
+        // and then reaches target. This is complex, so we'll try sampling points on mirror1.
+        
+        const numSamples = 20;
+        for (let i = 0; i <= numSamples; i++) {
+            const t1 = i / numSamples;
+            const hit1 = {
+                x: mirror1.start.x + t1 * (mirror1.end.x - mirror1.start.x),
+                y: mirror1.start.y + t1 * (mirror1.end.y - mirror1.start.y)
+            };
+            
+            // Check eye -> hit1
+            if (!isPathClear(eyePos, hit1, scene, false, false)) continue;
+            
+            // Calculate reflection at hit1
+            const inDir1 = normalize({ x: hit1.x - eyePos.x, y: hit1.y - eyePos.y });
+            const refDir1 = reflectVector(inDir1, mirror1.normal);
+            
+            // Find hit on mirror2
+            const hit2 = findRayMirrorHit(hit1, refDir1, mirror2);
+            if (!hit2) continue;
+            
+            // Check hit1 -> hit2
+            if (!isPathClear(hit1, hit2, scene, false, false)) continue;
+            
+            // Calculate reflection at hit2
+            const inDir2 = normalize({ x: hit2.x - hit1.x, y: hit2.y - hit1.y });
+            const refDir2 = reflectVector(inDir2, mirror2.normal);
+            
+            // Check if reflection direction points toward target
+            const toTarget = normalize({ x: target.x - hit2.x, y: target.y - hit2.y });
+            const dot = refDir2.x * toTarget.x + refDir2.y * toTarget.y;
+            
+            if (dot > 0.9) {  // Roughly aligned
+                // Verify hit2 -> target path
+                if (isPathClear(hit2, target, scene, false, true)) {
+                    return {
+                        success: true,
+                        rays: [
+                            { from: eyePos, to: hit1 },
+                            { from: hit1, to: hit2 },
+                            { from: hit2, to: target }
+                        ]
+                    };
+                }
+            }
+        }
+        
+        return { success: false, rays: [] };
+    }
+    
+    // More sophisticated path finding using virtual images
+    function tryReflectionPathVirtual(eyePos, mirror1, mirror2, target, scene) {
+        // Virtual image method: reflect target across mirror2, then across mirror1
+        // Then check if eye can "see" the doubly-reflected virtual image
+        
+        function reflectPointAcrossMirror(point, mirror) {
+            // Mirror line: from mirror.start to mirror.end
+            const dx = mirror.end.x - mirror.start.x;
+            const dy = mirror.end.y - mirror.start.y;
+            const len2 = dx * dx + dy * dy;
+            
+            const t = ((point.x - mirror.start.x) * dx + (point.y - mirror.start.y) * dy) / len2;
+            const projX = mirror.start.x + t * dx;
+            const projY = mirror.start.y + t * dy;
+            
+            return {
+                x: 2 * projX - point.x,
+                y: 2 * projY - point.y
+            };
+        }
+        
+        // Step 1: Reflect target across mirror2 to get virtual image V1
+        const v1 = reflectPointAcrossMirror(target, mirror2);
+        
+        // Step 2: Reflect V1 across mirror1 to get virtual image V2
+        const v2 = reflectPointAcrossMirror(v1, mirror1);
+        
+        // Step 3: Check if eye can see V2 through mirror1
+        const eyeToV2 = normalize({ x: v2.x - eyePos.x, y: v2.y - eyePos.y });
+        const hit1 = findRayMirrorHit(eyePos, eyeToV2, mirror1);
+        
+        if (!hit1) return { success: false, rays: [] };
+        if (!isPathClear(eyePos, hit1, scene, false, false)) return { success: false, rays: [] };
+        
+        // Step 4: Calculate reflection at hit1 and find hit on mirror2
+        const inDir1 = normalize({ x: hit1.x - eyePos.x, y: hit1.y - eyePos.y });
+        const refDir1 = reflectVector(inDir1, mirror1.normal);
+        
+        const hit2 = findRayMirrorHit(hit1, refDir1, mirror2);
+        if (!hit2) return { success: false, rays: [] };
+        if (!isPathClear(hit1, hit2, scene, false, false)) return { success: false, rays: [] };
+        
+        // Step 5: Check if reflection from hit2 reaches target
+        const inDir2 = normalize({ x: hit2.x - hit1.x, y: hit2.y - hit1.y });
+        const refDir2 = reflectVector(inDir2, mirror2.normal);
+        
+        // Verify direction toward target
+        const toTarget = { x: target.x - hit2.x, y: target.y - hit2.y };
+        const distToTarget = Math.sqrt(toTarget.x ** 2 + toTarget.y ** 2);
+        const normToTarget = normalize(toTarget);
+        
+        const dot = refDir2.x * normToTarget.x + refDir2.y * normToTarget.y;
+        
+        if (dot > 0.95 && distToTarget < 20) {
+            // Verify final path
+            if (isPathClear(hit2, target, scene, false, true)) {
+                return {
+                    success: true,
+                    rays: [
+                        { from: eyePos, to: hit1 },
+                        { from: hit1, to: hit2 },
+                        { from: hit2, to: target }
+                    ]
+                };
+            }
+        }
+        
+        return { success: false, rays: [] };
+    }
+    
+    function calculateVisibility() {
+        const scene = getSceneGeometry();
+        const results = {
+            targetResults: [],
+            totalVisible: 0,
+            allRays: []
+        };
+        
+        // For each target point on back of head
+        for (const target of scene.targets) {
+            let visible = false;
+            let successRays = [];
+            
+            // Try different reflection paths
+            const paths = [
+                // Eye -> Left mirror -> Central mirror -> Target
+                { m1: scene.leftMirror, m2: scene.centralMirror },
+                // Eye -> Right mirror -> Central mirror -> Target
+                { m1: scene.rightMirror, m2: scene.centralMirror },
+                // Eye -> Central mirror -> Left mirror -> Target
+                { m1: scene.centralMirror, m2: scene.leftMirror },
+                // Eye -> Central mirror -> Right mirror -> Target
+                { m1: scene.centralMirror, m2: scene.rightMirror },
+            ];
+            
+            for (const path of paths) {
+                if (visible) break;
+                
+                const result = tryReflectionPathVirtual(
+                    scene.eyePos,
+                    path.m1,
+                    path.m2,
+                    target,
+                    scene
+                );
+                
+                if (result.success) {
+                    visible = true;
+                    successRays = result.rays;
+                }
+            }
+            
+            results.targetResults.push({
+                target,
+                visible,
+                rays: successRays
+            });
+            
+            if (visible) {
+                results.totalVisible++;
+                results.allRays.push(...successRays.map(r => ({ ...r, success: true })));
+            }
+        }
+        
+        results.coverage = (results.totalVisible / scene.targets.length) * 100;
+        return results;
+    }
+    
+    // Auto-solve head yaw for best visibility
+    function autoSolveHeadYaw() {
+        let bestYaw = 0;
+        let bestCoverage = 0;
+        
+        // Try different head yaw angles
+        for (let yaw = -90; yaw <= 90; yaw += 5) {
+            state.headYaw = yaw;
+            const results = calculateVisibility();
+            if (results.coverage > bestCoverage) {
+                bestCoverage = results.coverage;
+                bestYaw = yaw;
+            }
+        }
+        
+        // Fine tune
+        for (let yaw = bestYaw - 5; yaw <= bestYaw + 5; yaw += 1) {
+            state.headYaw = yaw;
+            const results = calculateVisibility();
+            if (results.coverage > bestCoverage) {
+                bestCoverage = results.coverage;
+                bestYaw = yaw;
+            }
+        }
+        
+        state.headYaw = bestYaw;
+        return bestYaw;
+    }
+    
+    // ============================================
+    // RENDERING
+    // ============================================
+    
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    function worldToCanvas(x, y) {
+        // Flip Y so back wall (y=0) is at bottom of canvas
+        const canvasX = CONFIG.canvasMargin + x * CONFIG.scale;
+        const canvasY = canvas.height - CONFIG.canvasMargin - y * CONFIG.scale;
+        return { x: canvasX, y: canvasY };
+    }
+    
+    function drawLine(x1, y1, x2, y2, color, width = 2) {
+        const p1 = worldToCanvas(x1, y1);
+        const p2 = worldToCanvas(x2, y2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+    }
+    
+    function drawCircle(x, y, r, fillColor, strokeColor = null) {
+        const p = worldToCanvas(x, y);
+        ctx.fillStyle = fillColor;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * CONFIG.scale, 0, Math.PI * 2);
+        ctx.fill();
+        if (strokeColor) {
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+    
+    function drawEllipse(cx, cy, rx, ry, rotation, fillColor, strokeColor) {
+        const p = worldToCanvas(cx, cy);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(-rotation);  // Negate because canvas Y is flipped
+        ctx.scale(1, -1);  // Flip back for proper ellipse orientation
+        
+        ctx.fillStyle = fillColor;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx * CONFIG.scale, ry * CONFIG.scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if (strokeColor) {
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    
+    function drawMirror(mirror, color, label) {
+        drawLine(mirror.start.x, mirror.start.y, mirror.end.x, mirror.end.y, color, 4);
+        
+        // Draw pivot point
+        drawCircle(mirror.pivot.x, mirror.pivot.y, 0.2, '#ffff00', '#000');
+        
+        // Draw normal indicator
+        const midX = (mirror.start.x + mirror.end.x) / 2;
+        const midY = (mirror.start.y + mirror.end.y) / 2;
+        drawLine(midX, midY, midX + mirror.normal.x * 1.5, midY + mirror.normal.y * 1.5, '#ffff0088', 2);
+        
+        // Label
+        const labelPos = worldToCanvas(mirror.pivot.x, mirror.pivot.y - 1);
+        ctx.fillStyle = '#fff';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, labelPos.x, labelPos.y + 20);
+    }
+    
+    function render() {
+        // Clear canvas
+        ctx.fillStyle = '#0f0f1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        const scene = getSceneGeometry();
+        const results = calculateVisibility();
+        
+        // Draw grid
+        ctx.strokeStyle = '#1a1a3a';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= 50; x += 5) {
+            const p1 = worldToCanvas(x, 0);
+            const p2 = worldToCanvas(x, 30);
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= 30; y += 5) {
+            const p1 = worldToCanvas(0, y);
+            const p2 = worldToCanvas(50, y);
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+        }
+        
+        // Draw walls
+        // Back wall
+        drawLine(0, 0, 50, 0, '#666', 4);
+        // Left wall
+        drawLine(0, 0, 0, CONFIG.leftWallLength, '#666', 4);
+        
+        // Draw desk outline (faint)
+        const deskLeft = CONFIG.centralMirrorLeft - 3;
+        const deskRight = deskLeft + CONFIG.deskWidth;
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        const dl = worldToCanvas(deskLeft, 0);
+        const dr = worldToCanvas(deskRight, 0);
+        const dlTop = worldToCanvas(deskLeft, CONFIG.deskDepth);
+        const drTop = worldToCanvas(deskRight, CONFIG.deskDepth);
+        ctx.beginPath();
+        ctx.moveTo(dl.x, dl.y);
+        ctx.lineTo(dlTop.x, dlTop.y);
+        ctx.lineTo(drTop.x, drTop.y);
+        ctx.lineTo(dr.x, dr.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Draw central mirror
+        drawLine(scene.centralMirror.start.x, scene.centralMirror.start.y,
+                 scene.centralMirror.end.x, scene.centralMirror.end.y, '#00bfff', 6);
+        
+        // Label central mirror
+        const cmLabelPos = worldToCanvas(
+            (scene.centralMirror.start.x + scene.centralMirror.end.x) / 2,
+            -1.5
+        );
+        ctx.fillStyle = '#00bfff';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Central Mirror', cmLabelPos.x, cmLabelPos.y);
+        
+        // Draw side mirrors
+        drawMirror(scene.leftMirror, '#ff69b4', 'Left');
+        drawMirror(scene.rightMirror, '#ff69b4', 'Right');
+        
+        // Draw rays
+        for (const result of results.targetResults) {
+            if (result.visible) {
+                for (const ray of result.rays) {
+                    drawLine(ray.from.x, ray.from.y, ray.to.x, ray.to.y, '#28a74588', 2);
+                }
+            }
+        }
+        
+        // Draw successful rays with more opacity
+        for (const result of results.targetResults) {
+            if (result.visible) {
+                for (const ray of result.rays) {
+                    drawLine(ray.from.x, ray.from.y, ray.to.x, ray.to.y, '#28a745', 1);
+                }
+            }
+        }
+        
+        // Draw head (opaque ellipse)
+        drawEllipse(scene.headCx, scene.headCy, scene.headRx, scene.headRy, 
+                    scene.headYawRad, '#8b7355', '#654321');
+        
+        // Draw face direction indicator
+        const faceDir = {
+            x: Math.sin(scene.headYawRad) * 2,
+            y: Math.cos(scene.headYawRad) * 2
+        };
+        drawLine(scene.headCx, scene.headCy, 
+                 scene.headCx + faceDir.x, scene.headCy + faceDir.y, '#ffcc00', 2);
+        
+        // Draw eyes
+        const eyeSize = 0.25;
+        drawCircle(scene.eyePos.x, scene.eyePos.y, eyeSize, '#4169e1', '#fff');
+        
+        // Draw back-of-head targets
+        for (const result of results.targetResults) {
+            const color = result.visible ? '#28a745' : '#dc3545';
+            drawCircle(result.target.x, result.target.y, 0.2, color);
+        }
+        
+        // Draw scale reference
+        const scaleStart = worldToCanvas(40, 25);
+        const scaleEnd = worldToCanvas(45, 25);
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(scaleStart.x, scaleStart.y);
+        ctx.lineTo(scaleEnd.x, scaleEnd.y);
+        ctx.stroke();
+        ctx.fillStyle = '#666';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('5 inches', (scaleStart.x + scaleEnd.x) / 2, scaleStart.y - 5);
+        
+        // Draw coordinate labels
+        ctx.fillStyle = '#444';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'left';
+        const originLabel = worldToCanvas(0.5, 0.5);
+        ctx.fillText('(0,0)', originLabel.x, originLabel.y);
+        
+        // Update status
+        const statusEl = document.getElementById('statusIndicator');
+        const coverageEl = document.getElementById('coverageValue');
+        
+        const pass = results.coverage >= state.coverageThreshold;
+        statusEl.textContent = pass ? 'PASS' : 'FAIL';
+        statusEl.className = 'status-indicator ' + (pass ? 'status-pass' : 'status-fail');
+        coverageEl.textContent = results.coverage.toFixed(0) + '%';
+    }
+    
+    // ============================================
+    // UI CONTROLS
+    // ============================================
+    
+    function setupControls() {
+        const controls = [
+            { id: 'leftMirrorX', prop: ['leftMirror', 'x'], suffix: '"' },
+            { id: 'leftMirrorYaw', prop: ['leftMirror', 'yaw'], suffix: '°' },
+            { id: 'rightMirrorX', prop: ['rightMirror', 'x'], suffix: '"' },
+            { id: 'rightMirrorYaw', prop: ['rightMirror', 'yaw'], suffix: '°' },
+            { id: 'headYaw', prop: ['headYaw'], suffix: '°' },
+            { id: 'mirrorWidth', prop: ['mirrorWidth'], suffix: '"' },
+            { id: 'mirrorOverallWidth', prop: ['mirrorOverallWidth'], suffix: '"' },
+            { id: 'bracketOffset', prop: ['bracketOffset'], suffix: '"' },
+            { id: 'coverageThreshold', prop: ['coverageThreshold'], suffix: '%' },
+        ];
+        
+        controls.forEach(ctrl => {
+            const input = document.getElementById(ctrl.id);
+            const display = document.getElementById(ctrl.id + 'Val');
+            
+            input.addEventListener('input', () => {
+                const val = parseFloat(input.value);
+                if (ctrl.prop.length === 2) {
+                    state[ctrl.prop[0]][ctrl.prop[1]] = val;
+                } else {
+                    state[ctrl.prop[0]] = val;
+                }
+                display.textContent = val.toFixed(ctrl.suffix === '°' ? 0 : 1) + ctrl.suffix;
+                
+                // Enforce left mirror wall constraint
+                if (ctrl.id === 'leftMirrorYaw' || ctrl.id === 'leftMirrorX') {
+                    if (!checkLeftMirrorWallConstraint()) {
+                        // Clamp yaw to prevent wall intersection
+                        const minYaw = Math.max(-90, state.leftMirror.yaw);
+                        state.leftMirror.yaw = minYaw;
+                        document.getElementById('leftMirrorYaw').value = minYaw;
+                        document.getElementById('leftMirrorYawVal').textContent = minYaw + '°';
+                    }
+                }
+                
+                if (state.autoSolveHead && ctrl.id !== 'headYaw') {
+                    const bestYaw = autoSolveHeadYaw();
+                    document.getElementById('headYaw').value = bestYaw;
+                    document.getElementById('headYawVal').textContent = bestYaw + '°';
+                }
+                
+                render();
+            });
+            
+            // Initialize display
+            let val;
+            if (ctrl.prop.length === 2) {
+                val = state[ctrl.prop[0]][ctrl.prop[1]];
+            } else {
+                val = state[ctrl.prop[0]];
+            }
+            input.value = val;
+            display.textContent = val.toFixed(ctrl.suffix === '°' ? 0 : 1) + ctrl.suffix;
+        });
+        
+        // Auto-solve checkbox
+        const autoSolveCheck = document.getElementById('autoSolveHead');
+        const headYawGroup = document.getElementById('headYawGroup');
+        
+        autoSolveCheck.addEventListener('change', () => {
+            state.autoSolveHead = autoSolveCheck.checked;
+            headYawGroup.style.opacity = state.autoSolveHead ? '0.5' : '1';
+            
+            if (state.autoSolveHead) {
+                const bestYaw = autoSolveHeadYaw();
+                document.getElementById('headYaw').value = bestYaw;
+                document.getElementById('headYawVal').textContent = bestYaw + '°';
+            }
+            render();
+        });
+        
+        // Initialize auto-solve state
+        headYawGroup.style.opacity = state.autoSolveHead ? '0.5' : '1';
+        
+        // Reset button
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            state = {
+                leftMirror: { x: 2, yaw: 45 },
+                rightMirror: { x: 38, yaw: -45 },
+                headYaw: 0,
+                autoSolveHead: true,
+                mirrorWidth: 14,
+                mirrorOverallWidth: 16,
+                bracketOffset: 2,
+                coverageThreshold: 50,
+            };
+            
+            // Update all controls
+            controls.forEach(ctrl => {
+                const input = document.getElementById(ctrl.id);
+                const display = document.getElementById(ctrl.id + 'Val');
+                let val;
+                if (ctrl.prop.length === 2) {
+                    val = state[ctrl.prop[0]][ctrl.prop[1]];
+                } else {
+                    val = state[ctrl.prop[0]];
+                }
+                input.value = val;
+                display.textContent = val.toFixed(ctrl.suffix === '°' ? 0 : 1) + ctrl.suffix;
+            });
+            
+            autoSolveCheck.checked = true;
+            headYawGroup.style.opacity = '0.5';
+            
+            if (state.autoSolveHead) {
+                const bestYaw = autoSolveHeadYaw();
+                document.getElementById('headYaw').value = bestYaw;
+                document.getElementById('headYawVal').textContent = bestYaw + '°';
+            }
+            
+            render();
+        });
+        
+        // Advanced section toggle
+        const advToggle = document.getElementById('advancedToggle');
+        const advContent = document.getElementById('advancedContent');
+        
+        advToggle.addEventListener('click', () => {
+            advToggle.classList.toggle('collapsed');
+            advContent.classList.toggle('hidden');
+        });
+    }
+    
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+    
+    function init() {
+        setupControls();
+        
+        // Auto-solve on initial load
+        if (state.autoSolveHead) {
+            const bestYaw = autoSolveHeadYaw();
+            document.getElementById('headYaw').value = bestYaw;
+            document.getElementById('headYawVal').textContent = bestYaw + '°';
+        }
+        
+        render();
+    }
+    
+    // Handle window resize
+    function resizeCanvas() {
+        const container = canvas.parentElement;
+        const maxWidth = container.clientWidth - 20;
+        const maxHeight = container.clientHeight - 80;
+        
+        const aspectRatio = 800 / 700;
+        let newWidth = maxWidth;
+        let newHeight = newWidth / aspectRatio;
+        
+        if (newHeight > maxHeight) {
+            newHeight = maxHeight;
+            newWidth = newHeight * aspectRatio;
+        }
+        
+        canvas.style.width = newWidth + 'px';
+        canvas.style.height = newHeight + 'px';
+    }
+    
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('load', () => {
+        resizeCanvas();
+        init();
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1236 @@
+<!--
+Pivot Mirror Top-Down Simulator (Single-File HTML)
+
+What this page does
+- Simulates (in 2D, top-down) a seated person trying to see the back of her head using a fixed central wall mirror plus two wall-mounted pivot mirrors.
+- You can move each side mirror’s mount position along the back wall (x) and adjust its yaw (rotation in the top-down plane).
+- The app computes whether rays from the eyes can reach points on the “back-of-head” arc through valid reflection paths, while obeying wall and head-occlusion constraints.
+- It shows a PASS/FAIL indicator plus a coverage percentage, and draws successful rays (green) and some failed attempts (red).
+
+How to use
+- Adjust Left/Right mirror mount X and yaw. Watch PASS/FAIL and coverage update live.
+- Optionally use Auto-solve head yaw (default ON). If OFF, you can set head yaw manually.
+- Advanced: tweak reflective size, overall size, and bracket offset (assumptions) without changing the fixed room/desk geometry.
+
+Notes
+- One plane only (top-down). No height, pitch, or tilt. Mirrors are ideal planar reflectors in 2D.
+- Mirrors are modeled with a center pivot point (design assumption) offset from the back wall by a bracket.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pivot Mirror Top-Down Simulator</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#121925;
+      --panel2:#0f1520;
+      --text:#e7eef8;
+      --muted:#9fb0c6;
+      --good:#32d27a;
+      --bad:#ff4d4d;
+      --warn:#ffd166;
+      --line:#2a3a52;
+      --accent:#6aa9ff;
+    }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;}
+    .wrap{height:100%;display:flex;flex-direction:column;}
+    .topbar{
+      display:flex;gap:12px;align-items:stretch;
+      padding:10px 12px;background:linear-gradient(180deg,#111828,#0b0f14);
+      border-bottom:1px solid rgba(255,255,255,0.06);
+      position:sticky;top:0;z-index:10;
+    }
+    .leftcol{display:flex;flex-direction:column;gap:10px;min-width:340px;max-width:420px;flex:0 0 auto;}
+    .card{
+      background:rgba(255,255,255,0.04);
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:14px;
+      padding:10px 12px;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+    }
+    .statusRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 10px;border-radius:999px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.04);
+      font-weight:700;
+      letter-spacing:0.2px;
+    }
+    .pill .dot{width:10px;height:10px;border-radius:99px;background:var(--muted)}
+    .pill.good{border-color:rgba(50,210,122,0.45);background:rgba(50,210,122,0.10)}
+    .pill.good .dot{background:var(--good)}
+    .pill.bad{border-color:rgba(255,77,77,0.50);background:rgba(255,77,77,0.10)}
+    .pill.bad .dot{background:var(--bad)}
+    .pill.warn{border-color:rgba(255,209,102,0.45);background:rgba(255,209,102,0.10)}
+    .pill.warn .dot{background:var(--warn)}
+    .kv{display:flex;gap:10px;flex-wrap:wrap}
+    .kv .k{color:var(--muted);font-size:12px}
+    .kv .v{font-weight:700}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid1{display:grid;grid-template-columns:1fr;gap:10px}
+    .groupTitle{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin:2px 0 6px}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    .row{display:grid;grid-template-columns:1fr 84px;gap:8px;align-items:center}
+    input[type="range"]{width:100%}
+    input[type="number"]{
+      width:100%;box-sizing:border-box;
+      background:rgba(255,255,255,0.04);
+      border:1px solid rgba(255,255,255,0.12);
+      color:var(--text);
+      border-radius:10px;
+      padding:7px 8px;
+      font-variant-numeric: tabular-nums;
+    }
+    .btnRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+    button{
+      background:linear-gradient(180deg,#1a2a45,#122036);
+      border:1px solid rgba(255,255,255,0.12);
+      color:var(--text);
+      padding:9px 12px;border-radius:12px;
+      cursor:pointer;font-weight:700;
+    }
+    button:hover{border-color:rgba(106,169,255,0.40)}
+    details{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:8px 10px}
+    summary{cursor:pointer;font-weight:800;outline:none}
+    summary::marker{color:var(--accent)}
+    .assumptions{
+      margin:10px 12px 0;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.4;
+    }
+    .main{
+      flex:1 1 auto;
+      display:grid;
+      grid-template-columns: minmax(320px,420px) 1fr;
+      gap:12px;
+      padding:12px;
+      min-height:0;
+    }
+    .canvasCard{
+      background:rgba(255,255,255,0.02);
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:18px;
+      overflow:hidden;
+      position:relative;
+      min-height:0;
+    }
+    canvas{display:block;width:100%;height:100%;}
+    .legend{
+      position:absolute;right:10px;top:10px;
+      background:rgba(10,14,20,0.75);
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:14px;
+      padding:8px 10px;
+      font-size:12px;color:var(--muted);
+      max-width:280px;
+      backdrop-filter: blur(8px);
+    }
+    .legend b{color:var(--text)}
+    .legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+    .small{font-size:12px;color:var(--muted)}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-variant-numeric: tabular-nums;}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="leftcol">
+      <div class="card">
+        <div class="statusRow">
+          <div id="passPill" class="pill warn"><span class="dot"></span><span id="passText">Analyzing…</span></div>
+          <div class="pill"><span class="dot" style="background:var(--accent)"></span><span>Coverage: <span id="coverageText" class="mono">0%</span></span></div>
+          <div class="pill"><span class="dot" style="background:#b18cff"></span><span>Best head yaw: <span id="bestYawText" class="mono">0°</span></span></div>
+        </div>
+        <div class="kv" style="margin-top:8px">
+          <div><div class="k">Paths implemented</div><div class="v mono" style="font-size:12px">E→L→C→T, E→R→C→T, E→C→L→T, E→C→R→T, E→L→T, E→R→T, E→C→T</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="groupTitle">Controls (always visible)</div>
+
+        <div class="grid2">
+          <div>
+            <div class="groupTitle" style="margin-top:0">Left mirror</div>
+            <label>Mount X along back wall (in)</label>
+            <div class="row">
+              <input id="lX" type="range" min="0" max="40" step="0.1" />
+              <input id="lXn" type="number" step="0.1" />
+            </div>
+            <label>Yaw (deg)</label>
+            <div class="row">
+              <input id="lYaw" type="range" min="-180" max="180" step="1" />
+              <input id="lYawn" type="number" step="1" />
+            </div>
+          </div>
+
+          <div>
+            <div class="groupTitle" style="margin-top:0">Right mirror</div>
+            <label>Mount X along back wall (in)</label>
+            <div class="row">
+              <input id="rX" type="range" min="0" max="40" step="0.1" />
+              <input id="rXn" type="number" step="0.1" />
+            </div>
+            <label>Yaw (deg)</label>
+            <div class="row">
+              <input id="rYaw" type="range" min="-180" max="180" step="1" />
+              <input id="rYawn" type="number" step="1" />
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="groupTitle">Head</div>
+          <div class="grid1">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <label style="margin:0;display:flex;gap:8px;align-items:center">
+                <input id="autoYaw" type="checkbox" />
+                <span>Auto-solve head yaw (maximize coverage)</span>
+              </label>
+              <span class="small mono" id="autoInfo"></span>
+            </div>
+            <div id="headYawWrap">
+              <label>Head yaw (deg)</label>
+              <div class="row">
+                <input id="headYaw" type="range" min="-90" max="90" step="1" />
+                <input id="headYawn" type="number" step="1" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="btnRow">
+          <button id="resetBtn">Reset to defaults</button>
+          <span class="small">Tip: if the left mirror clamps, it is avoiding the short wall.</span>
+        </div>
+      </div>
+
+      <details id="advanced">
+        <summary>Advanced (mirror dimensions and bracket offset)</summary>
+        <div style="margin-top:10px" class="small">
+          Defaults match the Wayfair product specs for Winston Porter “Corrente Pivot-N-View…”:
+          overall 26×16 in, reflective 22×14 in (we use reflective width for the 2D segment length).
+        </div>
+
+        <div style="margin-top:10px" class="grid2">
+          <div class="card" style="background:rgba(255,255,255,0.02)">
+            <div class="groupTitle" style="margin-top:0">Reflective area (used in 2D)</div>
+            <label>Reflective width (in)</label>
+            <div class="row">
+              <input id="refW" type="range" min="6" max="24" step="0.1" />
+              <input id="refWn" type="number" step="0.1" />
+            </div>
+            <label>Reflective height (in) (not used in top-down)</label>
+            <div class="row">
+              <input id="refH" type="range" min="10" max="30" step="0.1" />
+              <input id="refHn" type="number" step="0.1" />
+            </div>
+          </div>
+
+          <div class="card" style="background:rgba(255,255,255,0.02)">
+            <div class="groupTitle" style="margin-top:0">Overall size (for drawing only)</div>
+            <label>Overall width (in)</label>
+            <div class="row">
+              <input id="ovW" type="range" min="8" max="24" step="0.1" />
+              <input id="ovWn" type="number" step="0.1" />
+            </div>
+            <label>Overall height (in) (not used in top-down)</label>
+            <div class="row">
+              <input id="ovH" type="range" min="10" max="35" step="0.1" />
+              <input id="ovHn" type="number" step="0.1" />
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px" class="card" style="background:rgba(255,255,255,0.02)">
+          <div class="groupTitle" style="margin-top:0">Bracket / wall offset</div>
+          <label>Pivot offset from back wall (in)</label>
+          <div class="row">
+            <input id="brOff" type="range" min="0.1" max="6" step="0.1" />
+            <input id="brOffn" type="number" step="0.1" />
+          </div>
+          <div class="small" style="margin-top:6px">
+            Assumption: the product page references “pivot grommets” and “tilt” but does not clearly specify center-pivot bracket geometry.
+            This simulator assumes a center-pivot point located <span class="mono">bracket offset</span> inches into the room from the back wall.
+          </div>
+        </div>
+      </details>
+
+      <div class="assumptions card">
+        <div class="groupTitle" style="margin-top:0">Assumptions (fixed geometry + person model)</div>
+        <ul style="margin:6px 0 0 18px;padding:0">
+          <li><b>Coordinate system:</b> back wall is the bottom line <span class="mono">y=0</span>. Positive <span class="mono">y</span> goes upward into the room. Left wall is <span class="mono">x=0</span> from <span class="mono">y=0..11</span>.</li>
+          <li><b>Central mirror:</b> on the back wall from <span class="mono">x=7..30</span> (23 in wide). Reflective side faces into the room.</li>
+          <li><b>Desk:</b> rectangle <span class="mono">29 in</span> wide (x=0..29) and <span class="mono">20 in</span> deep (y=0..20). Right side is open (no wall).</li>
+          <li><b>Head placement:</b> modeled as an ellipse. We interpret “10 inches away from the back wall” as: the <b>nearest point</b> of the head ellipse is at <span class="mono">y=10</span>. That means the head center is at <span class="mono">y=10+ry</span>.</li>
+          <li><b>PASS criterion:</b> PASS if best achievable coverage across allowed head yaw is at least <span class="mono">60%</span> of target points on the back-of-head arc.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="flex:1 1 auto"></div>
+  </div>
+
+  <div class="main">
+    <div class="leftcol" style="min-width:320px;max-width:420px;align-self:start"></div>
+
+    <div class="canvasCard">
+      <canvas id="c"></canvas>
+      <div class="legend">
+        <div><b>Legend</b></div>
+        <div style="margin-top:6px"><span class="sw" style="background:var(--good)"></span> Successful ray segment</div>
+        <div><span class="sw" style="background:var(--bad)"></span> Failed attempt (sample)</div>
+        <div><span class="sw" style="background:var(--accent)"></span> Mirrors</div>
+        <div style="margin-top:8px" class="small">
+          Yaw convention: <span class="mono">0°</span> means the mirror lies along the back wall (horizontal).
+          <span class="mono">90°</span> means mirror points “into” the room (vertical).
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // -----------------------------
+  // Fixed geometry (not user-modifiable)
+  // -----------------------------
+  const FIXED = {
+    deskW: 29,    // inches, x from 0..29
+    deskD: 20,    // inches, y from 0..20
+    leftWallLen: 11, // inches along y, x=0 from y=0..11
+    centralMirrorW: 23, // inches along x, on back wall y=0
+    centralMirrorLeftGap: 7, // inches between short wall and left edge of central mirror
+    worldW: 40,   // simulation world width for drawing and mount range
+    worldH: 30    // simulation world height for drawing
+  };
+
+  // Derived constants for central mirror segment
+  const CENTRAL = {
+    x1: FIXED.centralMirrorLeftGap,
+    x2: FIXED.centralMirrorLeftGap + FIXED.centralMirrorW,
+    y: 0
+  };
+
+  // -----------------------------
+  // Person model (fixed size/shape and eye position, only yaw may vary)
+  // -----------------------------
+  const PERSON = {
+    // Typical head dimensions in plan view (approx):
+    // width ~ 6.6 in, depth ~ 8.6 in
+    rx: 3.3, // semi-axis in x
+    ry: 4.3, // semi-axis in y (depth)
+    // Place head so nearest point to back wall (y=0) is 10 inches away:
+    // nearest point toward wall is at y = centerY - ry = 10  => centerY = 10 + ry
+    centerX: FIXED.deskW / 2, // centered on desk
+    centerY: 10 + 4.3,
+    // Eyes placed slightly toward the front (toward the back wall) from head center:
+    // fixed in head-local coordinates, rotated by head yaw.
+    eyeLocal: { x: 0.0, y: -2.4 }, // toward wall is negative y in our head-local frame
+    // Back-of-head target arc in head-local ellipse param angle (degrees):
+    // 110..250 covers the back half-ish.
+    targetArcDeg: { a0: 110, a1: 250 },
+    targetCount: 31
+  };
+
+  // -----------------------------
+  // Mirror defaults (Wayfair product specs)
+  // Overall: 26 H x 16 W; reflective: 22 H x 14 W
+  // In top-down, we use reflective width as the 2D segment length.
+  // -----------------------------
+  const DEFAULTS = {
+    reflectiveW: 14,
+    reflectiveH: 22, // not used in 2D
+    overallW: 16,    // for drawing outline only
+    overallH: 26,    // not used in 2D
+    bracketOffset: 2.0, // inches (assumption)
+    left:  { mountX: 5.5,  yawDeg: 60 },
+    right: { mountX: 33.0, yawDeg: 120 },
+    headYawDeg: 0,
+    autoSolveHeadYaw: true
+  };
+
+  // -----------------------------
+  // Paths implemented
+  // Each path is an ordered list of mirrors to reflect off before reaching target.
+  // E = eyes, T = target. Mirrors: L, R, C.
+  // -----------------------------
+  const PATHS = [
+    ["L","C"], // E -> L -> C -> T
+    ["R","C"], // E -> R -> C -> T
+    ["C","L"], // E -> C -> L -> T
+    ["C","R"], // E -> C -> R -> T
+    ["L"],     // E -> L -> T
+    ["R"],     // E -> R -> T
+    ["C"],     // E -> C -> T
+    []         // E -> T (direct). Included because user said she can gaze into non-central mirrors; direct is still meaningful.
+  ];
+
+  // -----------------------------
+  // UI wiring
+  // -----------------------------
+  const el = id => document.getElementById(id);
+
+  const UI = {
+    lX: el("lX"), lXn: el("lXn"),
+    lYaw: el("lYaw"), lYawn: el("lYawn"),
+    rX: el("rX"), rXn: el("rXn"),
+    rYaw: el("rYaw"), rYawn: el("rYawn"),
+    headYaw: el("headYaw"), headYawn: el("headYawn"),
+    autoYaw: el("autoYaw"),
+    resetBtn: el("resetBtn"),
+    refW: el("refW"), refWn: el("refWn"),
+    refH: el("refH"), refHn: el("refHn"),
+    ovW: el("ovW"), ovWn: el("ovWn"),
+    ovH: el("ovH"), ovHn: el("ovHn"),
+    brOff: el("brOff"), brOffn: el("brOffn"),
+    passPill: el("passPill"),
+    passText: el("passText"),
+    coverageText: el("coverageText"),
+    bestYawText: el("bestYawText"),
+    autoInfo: el("autoInfo"),
+    headYawWrap: el("headYawWrap")
+  };
+
+  // State
+  const S = {
+    reflectiveW: DEFAULTS.reflectiveW,
+    reflectiveH: DEFAULTS.reflectiveH,
+    overallW: DEFAULTS.overallW,
+    overallH: DEFAULTS.overallH,
+    bracketOffset: DEFAULTS.bracketOffset,
+    left: { mountX: DEFAULTS.left.mountX, yawDeg: DEFAULTS.left.yawDeg },
+    right:{ mountX: DEFAULTS.right.mountX, yawDeg: DEFAULTS.right.yawDeg },
+    headYawDeg: DEFAULTS.headYawDeg,
+    autoSolveHeadYaw: DEFAULTS.autoSolveHeadYaw
+  };
+
+  function bindRangePair(rangeEl, numEl, onChange) {
+    const syncFromRange = () => { numEl.value = rangeEl.value; onChange(); };
+    const syncFromNum   = () => { rangeEl.value = numEl.value; onChange(); };
+    rangeEl.addEventListener("input", syncFromRange);
+    numEl.addEventListener("input", syncFromNum);
+  }
+
+  function setControlsFromState() {
+    UI.lX.value = UI.lXn.value = S.left.mountX;
+    UI.lYaw.value = UI.lYawn.value = S.left.yawDeg;
+    UI.rX.value = UI.rXn.value = S.right.mountX;
+    UI.rYaw.value = UI.rYawn.value = S.right.yawDeg;
+    UI.headYaw.value = UI.headYawn.value = S.headYawDeg;
+    UI.autoYaw.checked = S.autoSolveHeadYaw;
+
+    UI.refW.value = UI.refWn.value = S.reflectiveW;
+    UI.refH.value = UI.refHn.value = S.reflectiveH;
+    UI.ovW.value  = UI.ovWn.value  = S.overallW;
+    UI.ovH.value  = UI.ovHn.value  = S.overallH;
+    UI.brOff.value= UI.brOffn.value= S.bracketOffset;
+
+    UI.headYawWrap.style.opacity = S.autoSolveHeadYaw ? "0.55" : "1";
+    UI.headYawWrap.style.pointerEvents = S.autoSolveHeadYaw ? "none" : "auto";
+  }
+
+  function resetToDefaults() {
+    Object.assign(S, {
+      reflectiveW: DEFAULTS.reflectiveW,
+      reflectiveH: DEFAULTS.reflectiveH,
+      overallW: DEFAULTS.overallW,
+      overallH: DEFAULTS.overallH,
+      bracketOffset: DEFAULTS.bracketOffset,
+      left: { ...DEFAULTS.left },
+      right:{ ...DEFAULTS.right },
+      headYawDeg: DEFAULTS.headYawDeg,
+      autoSolveHeadYaw: DEFAULTS.autoSolveHeadYaw
+    });
+    setControlsFromState();
+    computeAndRender();
+  }
+
+  // Bind control pairs
+  bindRangePair(UI.lX, UI.lXn, () => { S.left.mountX = clamp(+UI.lX.value, 0, FIXED.worldW); computeAndRender(); });
+  bindRangePair(UI.lYaw, UI.lYawn, () => { S.left.yawDeg = clamp(+UI.lYaw.value, -180, 180); computeAndRender(); });
+  bindRangePair(UI.rX, UI.rXn, () => { S.right.mountX = clamp(+UI.rX.value, 0, FIXED.worldW); computeAndRender(); });
+  bindRangePair(UI.rYaw, UI.rYawn, () => { S.right.yawDeg = clamp(+UI.rYaw.value, -180, 180); computeAndRender(); });
+
+  bindRangePair(UI.headYaw, UI.headYawn, () => { S.headYawDeg = clamp(+UI.headYaw.value, -90, 90); computeAndRender(); });
+
+  bindRangePair(UI.refW, UI.refWn, () => { S.reflectiveW = clamp(+UI.refW.value, 6, 24); computeAndRender(); });
+  bindRangePair(UI.refH, UI.refHn, () => { S.reflectiveH = clamp(+UI.refH.value, 10, 30); computeAndRender(); });
+  bindRangePair(UI.ovW,  UI.ovWn,  () => { S.overallW  = clamp(+UI.ovW.value, 8, 24); computeAndRender(); });
+  bindRangePair(UI.ovH,  UI.ovHn,  () => { S.overallH  = clamp(+UI.ovH.value, 10, 35); computeAndRender(); });
+  bindRangePair(UI.brOff,UI.brOffn,() => { S.bracketOffset = clamp(+UI.brOff.value, 0.1, 6); computeAndRender(); });
+
+  UI.autoYaw.addEventListener("change", () => {
+    S.autoSolveHeadYaw = UI.autoYaw.checked;
+    setControlsFromState();
+    computeAndRender();
+  });
+
+  UI.resetBtn.addEventListener("click", resetToDefaults);
+
+  // -----------------------------
+  // Canvas + coordinate transforms
+  // -----------------------------
+  const canvas = el("c");
+  const ctx = canvas.getContext("2d");
+
+  function resizeCanvas() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    computeAndRender();
+  }
+  window.addEventListener("resize", resizeCanvas);
+
+  // World-to-screen transform (inches to pixels)
+  const VIEW = {
+    pad: 18,
+    scale: 18 // provisional, will be recomputed
+  };
+
+  function computeScale() {
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+    const usableW = Math.max(1, w - 2*VIEW.pad);
+    const usableH = Math.max(1, h - 2*VIEW.pad);
+    const sx = usableW / FIXED.worldW;
+    const sy = usableH / FIXED.worldH;
+    VIEW.scale = Math.min(sx, sy);
+  }
+
+  function W2S(p) {
+    // World: origin at (0,0) bottom-left. Screen: y down, so invert.
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+    const x = VIEW.pad + p.x * VIEW.scale;
+    const y = h - VIEW.pad - p.y * VIEW.scale;
+    return {x,y};
+  }
+
+  // -----------------------------
+  // Geometry helpers
+  // -----------------------------
+  const EPS = 1e-6;
+
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  function deg2rad(d){ return d * Math.PI / 180; }
+
+  function add(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
+  function sub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+  function mul(a,s){ return {x:a.x*s, y:a.y*s}; }
+  function dot(a,b){ return a.x*b.x + a.y*b.y; }
+  function cross(a,b){ return a.x*b.y - a.y*b.x; }
+  function len(a){ return Math.hypot(a.x,a.y); }
+  function norm(a){ const L=len(a); return L<EPS?{x:0,y:0}:{x:a.x/L,y:a.y/L}; }
+
+  function segmentMid(a,b){ return mul(add(a,b),0.5); }
+
+  function pointToLineReflection(p, a, b){
+    // reflect point p across infinite line through a->b
+    const ab = sub(b,a);
+    const ap = sub(p,a);
+    const abN = norm(ab);
+    const proj = dot(ap, abN);
+    const closest = add(a, mul(abN, proj));
+    const v = sub(p, closest);
+    return sub(p, mul(v, 2)); // p - 2v
+  }
+
+  function reflectDirAcrossLine(dir, a, b){
+    // reflect direction vector dir across infinite line a->b (mirror line)
+    // using normal to the line: reflect across line == reflect across its normal perpendicular.
+    const ab = norm(sub(b,a));
+    // project dir onto ab and perpendicular:
+    const parallel = mul(ab, dot(dir, ab));
+    const perp = sub(dir, parallel);
+    // reflecting across the line keeps parallel, flips perp
+    return sub(parallel, perp);
+  }
+
+  function rayLineIntersection(o, d, a, b){
+    // ray: o + t d (t>=0), line segment a->b as infinite line (for intersection)
+    // Solve o + t d = a + u (b-a)
+    const v = sub(b,a);
+    const denom = cross(d, v);
+    if (Math.abs(denom) < 1e-10) return null; // parallel
+    const ao = sub(a, o);
+    const t = cross(ao, v) / denom;
+    const u = cross(ao, d) / denom;
+    return {t, u, p: add(o, mul(d, t))}; // u is along segment param (0..1 for segment)
+  }
+
+  function segmentIntersect(p1,p2,q1,q2){
+    // Proper segment intersection with eps tolerance
+    const r = sub(p2,p1);
+    const s = sub(q2,q1);
+    const denom = cross(r,s);
+    const qp = sub(q1,p1);
+
+    if (Math.abs(denom) < 1e-12){
+      // Parallel (ignore colinear overlaps for blocking, treat as no intersection)
+      return null;
+    }
+    const t = cross(qp, s) / denom;
+    const u = cross(qp, r) / denom;
+    if (t > EPS && t < 1-EPS && u > EPS && u < 1-EPS){
+      return add(p1, mul(r, t));
+    }
+    return null;
+  }
+
+  function segmentHitsEllipseInterior(p1, p2, c, rx, ry, allowTouchAtEnds=true){
+    // Check if segment passes through ellipse interior.
+    // Parametric segment: p(t)=p1 + t*(p2-p1), t in [0,1]
+    // Ellipse: ((x-cx)/rx)^2 + ((y-cy)/ry)^2 = 1
+    // Solve quadratic in t.
+    const d = sub(p2,p1);
+    const x1 = p1.x - c.x;
+    const y1 = p1.y - c.y;
+
+    const A = (d.x*d.x)/(rx*rx) + (d.y*d.y)/(ry*ry);
+    const B = 2*((x1*d.x)/(rx*rx) + (y1*d.y)/(ry*ry));
+    const C = (x1*x1)/(rx*rx) + (y1*y1)/(ry*ry) - 1;
+
+    const disc = B*B - 4*A*C;
+    if (disc < 0) return false;
+
+    const sdisc = Math.sqrt(disc);
+    const t0 = (-B - sdisc)/(2*A);
+    const t1 = (-B + sdisc)/(2*A);
+
+    // Any intersection within (0,1) means the line hits ellipse boundary.
+    // For interior blocking, we check whether segment overlaps inside region.
+    // A robust rule: if either endpoint is inside, or if segment crosses boundary twice with a span in-between.
+    const inside1 = ((x1*x1)/(rx*rx) + (y1*y1)/(ry*ry)) < 1 - 1e-8;
+    const x2 = p2.x - c.x;
+    const y2 = p2.y - c.y;
+    const inside2 = ((x2*x2)/(rx*rx) + (y2*y2)/(ry*ry)) < 1 - 1e-8;
+
+    if (inside1 || inside2) return true;
+
+    // If we intersect boundary at two points within the segment, the segment passes through interior between them.
+    const lo = Math.min(t0,t1);
+    const hi = Math.max(t0,t1);
+
+    const segLo = Math.max(lo, 0);
+    const segHi = Math.min(hi, 1);
+
+    if (segHi - segLo <= 0) return false;
+
+    // If the interior span is strictly inside (not just touching), then block.
+    // Allow touches very near endpoints (when target is on head boundary).
+    const margin = allowTouchAtEnds ? 1e-3 : 0;
+    if (segLo > margin && segHi < 1 - margin) return true;
+
+    // Edge case: one intersection in the middle implies tangent contact: treat as not blocking.
+    return false;
+  }
+
+  function pointOnRayDistance(p, o, d){
+    // distance from point p to ray o + t d (t>=0)
+    const op = sub(p,o);
+    const t = dot(op, d);
+    if (t < 0) return {t, dist: len(op)};
+    const proj = add(o, mul(d,t));
+    return {t, dist: len(sub(p,proj))};
+  }
+
+  // -----------------------------
+  // Scene objects
+  // -----------------------------
+  function makeMirrorSegment(pivot, yawDeg, segLen){
+    const th = deg2rad(yawDeg);
+    const dir = {x: Math.cos(th), y: Math.sin(th)};
+    const half = segLen/2;
+    const a = add(pivot, mul(dir, -half));
+    const b = add(pivot, mul(dir, +half));
+    return {a,b,pivot, yawDeg, dir};
+  }
+
+  function mirrorsFromState(){
+    // Pivot points are on back wall, offset into room by bracketOffset (assumption)
+    const pivotY = S.bracketOffset;
+    const L = makeMirrorSegment({x:S.left.mountX, y:pivotY}, S.left.yawDeg, S.reflectiveW);
+    const R = makeMirrorSegment({x:S.right.mountX,y:pivotY}, S.right.yawDeg,S.reflectiveW);
+
+    // Central mirror: lies on wall y=0 from x=7..30, pivot is midpoint
+    const C = {
+      a:{x:CENTRAL.x1, y:0},
+      b:{x:CENTRAL.x2, y:0},
+      pivot:{x:(CENTRAL.x1+CENTRAL.x2)/2, y:0},
+      yawDeg:0
+    };
+    C.dir = norm(sub(C.b, C.a));
+    return {L,R,C};
+  }
+
+  function wallSegments(){
+    // Back wall: across world width.
+    const back = {a:{x:0,y:0}, b:{x:FIXED.worldW,y:0}};
+    // Short left wall:
+    const left = {a:{x:0,y:0}, b:{x:0,y:FIXED.leftWallLen}};
+    return [back,left];
+  }
+
+  // -----------------------------
+  // Head + targets
+  // -----------------------------
+  function rotateAround(p, center, yawDeg){
+    const t = deg2rad(yawDeg);
+    const s = Math.sin(t), c = Math.cos(t);
+    const v = sub(p, center);
+    return add(center, {x: v.x*c - v.y*s, y: v.x*s + v.y*c});
+  }
+
+  function headPose(headYawDeg){
+    const c = {x:PERSON.centerX, y:PERSON.centerY};
+    // Eyes are at head-local point (relative to center), then rotated
+    const eyeLocal = {x: PERSON.eyeLocal.x, y: PERSON.eyeLocal.y};
+    const eye = rotateAround(add(c, eyeLocal), c, headYawDeg);
+
+    // Targets on ellipse boundary, in head-local param angle (deg), then rotated.
+    const targets = [];
+    const a0 = PERSON.targetArcDeg.a0;
+    const a1 = PERSON.targetArcDeg.a1;
+    for (let i=0;i<PERSON.targetCount;i++){
+      const tDeg = a0 + (a1-a0)*(i/(PERSON.targetCount-1));
+      const t = deg2rad(tDeg);
+      // Ellipse param point in head-local (x=rx cos t, y=ry sin t)
+      const local = {x: PERSON.rx*Math.cos(t), y: PERSON.ry*Math.sin(t)};
+      const world = rotateAround(add(c, local), c, headYawDeg);
+      targets.push({p:world, arcDeg:tDeg});
+    }
+    return {center:c, eye, targets, yawDeg: headYawDeg};
+  }
+
+  // -----------------------------
+  // Constraints: left mirror yaw vs left wall
+  // -----------------------------
+  function leftMirrorValid(mL){
+    // Must not intersect the left wall segment x=0, y=0..11
+    const leftWall = {a:{x:0,y:0}, b:{x:0,y:FIXED.leftWallLen}};
+    // If the mirror segment crosses x=0 within the wall span, invalid.
+    const hit = segmentIntersect(mL.a, mL.b, leftWall.a, leftWall.b);
+    if (hit) return false;
+    // Also disallow endpoints clearly to the left of wall (x<0)
+    if (mL.a.x < -1e-3 || mL.b.x < -1e-3) return false;
+    return true;
+  }
+
+  function clampLeftYawToValid(desiredYaw){
+    // If already valid, return.
+    const test = (yaw) => leftMirrorValid(makeMirrorSegment({x:S.left.mountX,y:S.bracketOffset}, yaw, S.reflectiveW));
+    if (test(desiredYaw)) return desiredYaw;
+
+    // Search outward to nearest valid yaw (1 degree increments)
+    for (let delta=1; delta<=180; delta++){
+      const y1 = desiredYaw - delta;
+      const y2 = desiredYaw + delta;
+      if (y1 >= -180 && test(y1)) return y1;
+      if (y2 <= 180 && test(y2)) return y2;
+    }
+    // If none found, just clamp to 0 (should never happen with this geometry).
+    return clamp(desiredYaw, -180, 180);
+  }
+
+  // -----------------------------
+  // Occlusion checks
+  // -----------------------------
+  function segmentBlockedByWalls(p1,p2, mirrors, allowHitOnMirror=null){
+    // allowHitOnMirror: if provided, intersection at that mirror segment endpoint region is allowed.
+    const walls = wallSegments();
+
+    // Block by back wall and left wall segments
+    for (const w of walls){
+      // If the segment touches the back wall at a mirror reflection point, we handle in mirror logic, not here.
+      const hit = segmentIntersect(p1,p2,w.a,w.b);
+      if (hit){
+        // If allowed mirror segment exists, ignore intersections that occur very close to the mirror hit point.
+        if (allowHitOnMirror){
+          const dh = len(sub(hit, allowHitOnMirror));
+          if (dh < 0.03) continue; // small tolerance
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function segmentBlockedByHead(p1,p2, head, allowTouchAtEnds=true){
+    return segmentHitsEllipseInterior(p1, p2, head.center, PERSON.rx, PERSON.ry, allowTouchAtEnds);
+  }
+
+  // -----------------------------
+  // Reflection path solver (ray tracing with unfolding initial direction)
+  // -----------------------------
+  function solvePathForTarget(eye, target, head, mirrors, mirrorSeq){
+    // mirrorSeq: array of mirror keys like ["L","C"] etc
+    // Direct case:
+    if (mirrorSeq.length === 0){
+      // Segment eye->target must not be blocked by walls.
+      // Also must not pass through head interior (it will pass through head, but eyes are inside/near head boundary).
+      // We allow eye point to be within head, but we do not allow the segment (excluding a tiny neighborhood around eye) to cross interior.
+      // Practical approach: slightly nudge the eye outward along the segment direction for blocking tests.
+      const d = norm(sub(target, eye));
+      const eyeOut = add(eye, mul(d, 0.15));
+      if (segmentBlockedByWalls(eyeOut, target, mirrors, null)) return {ok:false};
+      if (segmentBlockedByHead(eyeOut, target, head, true)) return {ok:false};
+      return {ok:true, points:[eye, target], mirrorsUsed:[]};
+    }
+
+    // Build unfolded target by reflecting across mirrors in reverse order
+    let unfolded = target;
+    for (let i=mirrorSeq.length-1;i>=0;i--){
+      const key = mirrorSeq[i];
+      const m = mirrors[key];
+      unfolded = pointToLineReflection(unfolded, m.a, m.b);
+    }
+
+    let o = eye;
+    let d = norm(sub(unfolded, eye));
+    const pts = [eye];
+    const used = [];
+
+    // Iterate reflections
+    for (let i=0;i<mirrorSeq.length;i++){
+      const key = mirrorSeq[i];
+      const m = mirrors[key];
+
+      // Intersect ray with mirror infinite line
+      const hit = rayLineIntersection(o, d, m.a, m.b);
+      if (!hit) return {ok:false};
+
+      // Must be forward on ray and within mirror segment bounds
+      if (hit.t <= 1e-4) return {ok:false};
+      if (hit.u < -1e-3 || hit.u > 1+1e-3) return {ok:false};
+
+      const pHit = hit.p;
+
+      // Must not be blocked between o and pHit
+      // Allow this hit point as "allowed" wall contact (for central mirror on wall y=0).
+      if (segmentBlockedByWalls(o, pHit, mirrors, pHit)) return {ok:false};
+
+      // Blocked by head interior
+      // Allow touch near endpoints, but do not allow passing through head interior.
+      // For eye-to-first-hit, nudge eye outward a bit.
+      let a0 = o, b0 = pHit;
+      if (i===0){
+        const d0 = norm(sub(pHit, o));
+        a0 = add(o, mul(d0, 0.15));
+      }
+      if (segmentBlockedByHead(a0, b0, head, true)) return {ok:false};
+
+      pts.push(pHit);
+      used.push(key);
+
+      // Reflect direction about mirror line and continue
+      d = norm(reflectDirAcrossLine(d, m.a, m.b));
+      o = pHit;
+    }
+
+    // After last reflection, ray must reach target
+    const rayCheck = pointOnRayDistance(target, o, d);
+    if (rayCheck.dist > 0.08) return {ok:false};
+    if (rayCheck.t < 0.2) return {ok:false}; // must be in front a bit
+
+    // Check final segment not blocked
+    const endSegStart = add(o, mul(d, 0.02));
+    if (segmentBlockedByWalls(endSegStart, target, mirrors, null)) return {ok:false};
+    // Allow touching head at target, but do not allow crossing interior.
+    if (segmentBlockedByHead(endSegStart, target, head, true)) return {ok:false};
+
+    pts.push(target);
+    return {ok:true, points:pts, mirrorsUsed:used};
+  }
+
+  function evaluateConfigurationForHeadYaw(headYawDeg){
+    // Apply left mirror yaw clamping to respect left wall constraint
+    const clampedLeftYaw = clampLeftYawToValid(S.left.yawDeg);
+    if (clampedLeftYaw !== S.left.yawDeg) {
+      // Update controls/state silently so the UI doesn't fight the user too aggressively.
+      S.left.yawDeg = clampedLeftYaw;
+      UI.lYaw.value = UI.lYawn.value = clampedLeftYaw;
+    }
+
+    const mirrors = mirrorsFromState();
+
+    // Also check left mirror validity in case mountX changed
+    if (!leftMirrorValid(mirrors.L)){
+      // Clamp yaw again (mountX could cause new invalid region)
+      S.left.yawDeg = clampLeftYawToValid(S.left.yawDeg);
+      UI.lYaw.value = UI.lYawn.value = S.left.yawDeg;
+    }
+
+    // Head pose
+    const head = headPose(headYawDeg);
+
+    // Coverage scoring
+    const targetResults = [];
+    let okCount = 0;
+
+    // For ray drawing: keep successful rays for many targets; also keep a few failed
+    const goodRays = [];
+    const badRays = [];
+
+    for (const t of head.targets){
+      let best = null;
+
+      for (const seq of PATHS){
+        const res = solvePathForTarget(head.eye, t.p, head, mirrors, seq);
+        if (res.ok){
+          best = res;
+          break; // shortest preference by PATHS ordering
+        } else {
+          // keep some failed samples for drawing
+          if (badRays.length < 12) {
+            // If there was at least one mirror, draw an attempted straight segment toward unfolded target for visual feedback
+            badRays.push({points:[head.eye, t.p], reason:"blocked"});
+          }
+        }
+      }
+
+      if (best){
+        okCount++;
+        goodRays.push(best);
+        targetResults.push({ok:true, best});
+      } else {
+        targetResults.push({ok:false});
+      }
+    }
+
+    const coverage = okCount / head.targets.length;
+    return {coverage, head, mirrors, goodRays, badRays, okCount, total: head.targets.length};
+  }
+
+  function autoSolveYaw(){
+    // Search a reasonable yaw range and pick best coverage.
+    // We keep it small-step but fast.
+    let best = {coverage:-1, yawDeg:0, eval:null};
+
+    // If user manually set head yaw, center search around it for quicker convergence.
+    const center = clamp(S.headYawDeg, -90, 90);
+
+    // Two-pass search: coarse then refine around best.
+    const candidates = [];
+    for (let y=-90;y<=90;y+=3) candidates.push(y);
+
+    // Bias ordering: try around center first
+    candidates.sort((a,b)=> Math.abs(a-center)-Math.abs(b-center));
+
+    for (const y of candidates){
+      const ev = evaluateConfigurationForHeadYaw(y);
+      if (ev.coverage > best.coverage){
+        best = {coverage: ev.coverage, yawDeg: y, eval: ev};
+      }
+    }
+
+    // refine around best
+    let refined = best;
+    for (let y=best.yawDeg-6; y<=best.yawDeg+6; y+=1){
+      if (y < -90 || y > 90) continue;
+      const ev = evaluateConfigurationForHeadYaw(y);
+      if (ev.coverage > refined.coverage){
+        refined = {coverage: ev.coverage, yawDeg: y, eval: ev};
+      }
+    }
+    return refined;
+  }
+
+  // -----------------------------
+  // Drawing
+  // -----------------------------
+  function drawScene(evalRes, status){
+    computeScale();
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+
+    // background
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = "#0b0f14";
+    ctx.fillRect(0,0,w,h);
+
+    // grid
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = "#1b2a3f";
+    ctx.lineWidth = 1;
+    const gridStepIn = 2;
+    for (let x=0;x<=FIXED.worldW;x+=gridStepIn){
+      const p1 = W2S({x,y:0});
+      const p2 = W2S({x,y:FIXED.worldH});
+      ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+    }
+    for (let y=0;y<=FIXED.worldH;y+=gridStepIn){
+      const p1 = W2S({x:0,y});
+      const p2 = W2S({x:FIXED.worldW,y});
+      ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Desk
+    const deskA = W2S({x:0,y:0});
+    const deskB = W2S({x:FIXED.deskW,y:FIXED.deskD});
+    const deskX = deskA.x;
+    const deskY = deskB.y;
+    const deskWpx = (FIXED.deskW)*VIEW.scale;
+    const deskHpx = (FIXED.deskD)*VIEW.scale;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 2;
+    roundRect(ctx, deskX, deskY, deskWpx, deskHpx, 14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // Walls
+    const walls = wallSegments();
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = 4;
+    for (const ws of walls){
+      const a = W2S(ws.a), b = W2S(ws.b);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Central mirror (on wall)
+    const mC = evalRes.mirrors.C;
+    drawMirror(mC, {stroke:"rgba(106,169,255,0.9)", width:6}, true);
+
+    // Side mirrors: draw overall outline length and reflective segment length
+    drawMirrorOverall(evalRes.mirrors.L, S.overallW, "rgba(106,169,255,0.35)");
+    drawMirrorOverall(evalRes.mirrors.R, S.overallW, "rgba(106,169,255,0.35)");
+    drawMirror(evalRes.mirrors.L, {stroke:"rgba(106,169,255,0.95)", width:5}, false);
+    drawMirror(evalRes.mirrors.R, {stroke:"rgba(106,169,255,0.95)", width:5}, false);
+
+    // Head ellipse
+    const head = evalRes.head;
+    drawEllipse(head.center, PERSON.rx, PERSON.ry, head.yawDeg);
+
+    // Back-of-head target arc points
+    ctx.save();
+    ctx.fillStyle = "rgba(255,209,102,0.85)";
+    for (const t of head.targets){
+      const p = W2S(t.p);
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,3.2,0,Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Eyes
+    ctx.save();
+    const e = W2S(head.eye);
+    ctx.fillStyle = "#e7eef8";
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(e.x,e.y,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // Rays: good in green
+    ctx.save();
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = "rgba(50,210,122,0.9)";
+    ctx.globalAlpha = 0.85;
+    for (const ray of evalRes.goodRays){
+      drawPolyline(ray.points);
+    }
+    ctx.restore();
+
+    // Rays: some failed in red
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,77,77,0.55)";
+    ctx.globalAlpha = 0.65;
+    for (const ray of evalRes.badRays){
+      drawPolyline(ray.points);
+    }
+    ctx.restore();
+
+    // Label key measurements
+    ctx.save();
+    ctx.fillStyle = "rgba(231,238,248,0.78)";
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+    drawTextAtWorld(`Desk: ${FIXED.deskW}w×${FIXED.deskD}d`, {x: 0.5, y: FIXED.deskD + 0.8});
+    drawTextAtWorld(`Left wall: 11 in`, {x: 0.5, y: FIXED.leftWallLen + 0.8});
+    drawTextAtWorld(`Central mirror: x=${CENTRAL.x1}..${CENTRAL.x2}`, {x: CENTRAL.x1, y: 1.2});
+    ctx.restore();
+
+    // Little status note on canvas
+    ctx.save();
+    ctx.fillStyle = "rgba(231,238,248,0.75)";
+    ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+    ctx.fillText(status, 16, 24);
+    ctx.restore();
+
+    function drawTextAtWorld(txt, wp){
+      const sp = W2S(wp);
+      ctx.fillText(txt, sp.x, sp.y);
+    }
+
+    function drawPolyline(points){
+      if (!points || points.length < 2) return;
+      const p0 = W2S(points[0]);
+      ctx.beginPath();
+      ctx.moveTo(p0.x,p0.y);
+      for (let i=1;i<points.length;i++){
+        const pi = W2S(points[i]);
+        ctx.lineTo(pi.x,pi.y);
+      }
+      ctx.stroke();
+    }
+
+    function drawMirror(m, style, isCentral){
+      const a = W2S(m.a), b = W2S(m.b);
+      ctx.save();
+      ctx.strokeStyle = style.stroke;
+      ctx.lineWidth = style.width;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+
+      // pivot point marker for side mirrors
+      if (!isCentral){
+        const pv = W2S(m.pivot);
+        ctx.fillStyle = "rgba(106,169,255,0.9)";
+        ctx.strokeStyle = "rgba(0,0,0,0.4)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(pv.x,pv.y,4.2,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawMirrorOverall(m, overallW, color){
+      // Draw a lighter segment representing overall width (for visual)
+      const th = deg2rad(m.yawDeg);
+      const dir = {x: Math.cos(th), y: Math.sin(th)};
+      const half = overallW/2;
+      const a = add(m.pivot, mul(dir, -half));
+      const b = add(m.pivot, mul(dir, +half));
+      const as = W2S(a), bs = W2S(b);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 9;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(as.x,as.y); ctx.lineTo(bs.x,bs.y); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawEllipse(center, rx, ry, yawDeg){
+      const c = W2S(center);
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.rotate(-deg2rad(yawDeg)); // screen y is inverted relative to world
+      ctx.scale(rx*VIEW.scale, ry*VIEW.scale);
+
+      ctx.beginPath();
+      ctx.ellipse(0,0,1,1,0,0,Math.PI*2);
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      ctx.fill();
+      ctx.lineWidth = 2/Math.max(1, rx*VIEW.scale);
+      ctx.strokeStyle = "rgba(255,255,255,0.22)";
+      ctx.stroke();
+
+      // Mark "front" direction (toward back wall) in head-local -y
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.lineTo(0,-1);
+      ctx.strokeStyle = "rgba(255,209,102,0.65)";
+      ctx.lineWidth = 2/Math.max(1, rx*VIEW.scale);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function roundRect(ctx, x, y, w, h, r){
+      const rr = Math.min(r, w/2, h/2);
+      ctx.beginPath();
+      ctx.moveTo(x+rr, y);
+      ctx.arcTo(x+w, y, x+w, y+h, rr);
+      ctx.arcTo(x+w, y+h, x, y+h, rr);
+      ctx.arcTo(x, y+h, x, y, rr);
+      ctx.arcTo(x, y, x+w, y, rr);
+      ctx.closePath();
+    }
+  }
+
+  // -----------------------------
+  // Main compute + render
+  // -----------------------------
+  function computeAndRender(){
+    // Ensure left yaw respects wall constraints
+    S.left.yawDeg = clampLeftYawToValid(S.left.yawDeg);
+    UI.lYaw.value = UI.lYawn.value = S.left.yawDeg;
+
+    // Clamp mount positions within world
+    S.left.mountX  = clamp(S.left.mountX, 0, FIXED.worldW);
+    S.right.mountX = clamp(S.right.mountX, 0, FIXED.worldW);
+    UI.lX.value = UI.lXn.value = S.left.mountX;
+    UI.rX.value = UI.rXn.value = S.right.mountX;
+
+    // Evaluate
+    let bestYaw = S.headYawDeg;
+    let evalRes = null;
+
+    if (S.autoSolveHeadYaw){
+      const solved = autoSolveYaw();
+      bestYaw = solved.yawDeg;
+      evalRes = solved.eval;
+      UI.autoInfo.textContent = `searching yaw in [-90,90], chose ${bestYaw}°`;
+    } else {
+      bestYaw = S.headYawDeg;
+      evalRes = evaluateConfigurationForHeadYaw(bestYaw);
+      UI.autoInfo.textContent = `manual yaw`;
+    }
+
+    // Score + PASS/FAIL
+    const coveragePct = Math.round(evalRes.coverage * 100);
+    const pass = coveragePct >= 60;
+
+    UI.coverageText.textContent = `${coveragePct}%`;
+    UI.bestYawText.textContent = `${bestYaw}°`;
+
+    UI.passPill.classList.remove("good","bad","warn");
+    if (pass){
+      UI.passPill.classList.add("good");
+      UI.passText.textContent = "PASS";
+    } else {
+      UI.passPill.classList.add("bad");
+      UI.passText.textContent = "FAIL";
+    }
+
+    // Show note if left mirror is invalid-ish due to wall
+    const L = evalRes.mirrors.L;
+    const lValid = leftMirrorValid(L);
+    if (!lValid){
+      UI.passPill.classList.remove("good","bad");
+      UI.passPill.classList.add("warn");
+      UI.passText.textContent = "Clamping left mirror (wall)";
+    }
+
+    // Draw
+    const status = `Coverage ${coveragePct}% (${evalRes.okCount}/${evalRes.total}) using head yaw ${bestYaw}°.`;
+    drawScene(evalRes, status);
+  }
+
+  // init controls
+  setControlsFromState();
+  resizeCanvas();
+
+  // On load, try to pick defaults that are likely to work:
+  // If auto mode is ON, it will pick a head yaw that maximizes coverage.
+  computeAndRender();
+})();
+</script>
+</body>
+</html>

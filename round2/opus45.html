@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pivot Mirror Configuration Simulator</title>
+    <!--
+    ================================================================================
+    PIVOT MIRROR CONFIGURATION SIMULATOR
+    ================================================================================
+    
+    PURPOSE:
+    This interactive tool helps configure two pivot mirrors on either side of an
+    existing makeup mirror so a seated person can see the back of their head.
+    
+    SETUP (based on real measurements):
+    - Central fixed mirror: 23" wide x 29" tall on the back wall (bottom of view)
+    - Desktop: 20" deep x 29" wide
+    - Left wall extends 11" from back wall
+    - 7" gap from central mirror edge to left wall
+    - Right side is open (no wall)
+    
+    MIRROR SPECS (Winston Porter Corrente Pivot-N-View):
+    - Overall size with grommets: 16"W x 26"H
+    - Reflective surface: 14"W x 22"H
+    - 360-degree pivot capability
+    
+    HOW TO USE:
+    1. The top-down view shows your setup from above
+    2. Adjust mirror positions using the sliders on the right panel
+    3. Change mirror yaw (rotation) to angle them correctly
+    4. Green rays show successful reflection paths (you CAN see back of head)
+    5. Red rays show blocked or missed paths
+    6. The PASS/FAIL indicator shows if the current setup works
+    7. Coverage score shows what percentage of the back of your head is visible
+    8. Click "Reset to Defaults" to restore the initial working configuration
+    
+    PHYSICS:
+    Uses 2D ray tracing with law of reflection (angle of incidence = angle of reflection)
+    Checks multiple paths: Eye → Side Mirror → Central Mirror → Back of Head
+    ================================================================================
+    -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-panel: #12121a;
+            --bg-control: #1a1a25;
+            --accent-cyan: #00d4ff;
+            --accent-green: #00ff88;
+            --accent-red: #ff4466;
+            --accent-orange: #ff8844;
+            --text-primary: #e8e8f0;
+            --text-secondary: #888899;
+            --border-color: #2a2a3a;
+            --glow-cyan: 0 0 20px rgba(0, 212, 255, 0.3);
+            --glow-green: 0 0 20px rgba(0, 255, 136, 0.4);
+            --glow-red: 0 0 20px rgba(255, 68, 102, 0.4);
+        }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(180deg, var(--bg-panel) 0%, transparent 100%);
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .status-indicator.pass {
+            background: rgba(0, 255, 136, 0.15);
+            border: 1px solid var(--accent-green);
+            color: var(--accent-green);
+            box-shadow: var(--glow-green);
+        }
+        
+        .status-indicator.fail {
+            background: rgba(255, 68, 102, 0.15);
+            border: 1px solid var(--accent-red);
+            color: var(--accent-red);
+            box-shadow: var(--glow-red);
+        }
+        
+        .coverage-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+        
+        .coverage-bar {
+            width: 80px;
+            height: 8px;
+            background: var(--bg-control);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .coverage-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+            transition: width 0.3s ease;
+        }
+        
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+        }
+        
+        #simulationCanvas {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            background: rgba(18, 18, 26, 0.9);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            font-size: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 3px;
+            border-radius: 2px;
+        }
+        
+        .control-panel {
+            width: 340px;
+            background: var(--bg-panel);
+            border-left: 1px solid var(--border-color);
+            padding: 16px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        
+        .panel-section {
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .mirror-group {
+            background: var(--bg-control);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .mirror-group-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .mirror-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .mirror-indicator.left {
+            background: var(--accent-orange);
+        }
+        
+        .mirror-indicator.right {
+            background: var(--accent-cyan);
+        }
+        
+        .control-row {
+            margin-bottom: 10px;
+        }
+        
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        
+        .control-label span:first-child {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .control-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent-cyan);
+            background: rgba(0, 212, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--bg-dark);
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+            transition: transform 0.2s ease;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-cyan), #0099cc);
+            color: var(--bg-dark);
+        }
+        
+        .btn-primary:hover {
+            box-shadow: var(--glow-cyan);
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: var(--bg-control);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            margin-top: 8px;
+        }
+        
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+        
+        .info-box {
+            background: rgba(0, 212, 255, 0.08);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        
+        .info-box strong {
+            color: var(--accent-cyan);
+        }
+        
+        .specs-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.7rem;
+        }
+        
+        .spec-item {
+            background: var(--bg-dark);
+            padding: 6px 8px;
+            border-radius: 4px;
+        }
+        
+        .spec-label {
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 2px;
+        }
+        
+        .spec-value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+            margin-left: 4px;
+            width: 14px;
+            height: 14px;
+            background: var(--bg-dark);
+            border-radius: 50%;
+            font-size: 0.65rem;
+            text-align: center;
+            line-height: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .tooltip:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            z-index: 100;
+            margin-bottom: 4px;
+        }
+        
+        @media (max-width: 900px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .control-panel {
+                width: 100%;
+                max-height: 300px;
+                border-left: none;
+                border-top: 1px solid var(--border-color);
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">◇</div>
+            <h1>Pivot Mirror Configuration Simulator</h1>
+        </div>
+        <div class="status-bar">
+            <div class="coverage-display">
+                <span>Coverage:</span>
+                <div class="coverage-bar">
+                    <div class="coverage-fill" id="coverageFill" style="width: 0%"></div>
+                </div>
+                <span id="coverageValue">0%</span>
+            </div>
+            <div class="status-indicator" id="statusIndicator">
+                <span id="statusText">CHECKING...</span>
+            </div>
+        </div>
+    </header>
+    
+    <div class="main-container">
+        <div class="canvas-container">
+            <canvas id="simulationCanvas" width="700" height="600"></canvas>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00ff88"></div>
+                    <span>Successful ray path</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff4466"></div>
+                    <span>Blocked/missed ray</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00d4ff"></div>
+                    <span>Central mirror</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff8844"></div>
+                    <span>Left pivot mirror</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #88ccff"></div>
+                    <span>Right pivot mirror</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-panel">
+            <div class="panel-section">
+                <div class="section-title">Mirror Specifications</div>
+                <div class="info-box">
+                    <strong>Winston Porter Corrente Pivot-N-View</strong><br>
+                    Overall: 16"W × 26"H (with grommets)<br>
+                    Reflective: 14"W × 22"H<br>
+                    360° pivot capability
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">Left Mirror Controls</div>
+                <div class="mirror-group">
+                    <div class="mirror-group-title">
+                        <div class="mirror-indicator left"></div>
+                        Left Side Mirror
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>X Position (from center)</span>
+                            <span class="control-value" id="leftXValue">-14"</span>
+                        </div>
+                        <input type="range" id="leftMirrorX" min="-20" max="-5" value="-14" step="0.5">
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Y Position (from wall)</span>
+                            <span class="control-value" id="leftYValue">8"</span>
+                        </div>
+                        <input type="range" id="leftMirrorY" min="2" max="18" value="8" step="0.5">
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Yaw Angle <span class="tooltip" data-tip="Rotation in the horizontal plane">?</span></span>
+                            <span class="control-value" id="leftYawValue">45°</span>
+                        </div>
+                        <input type="range" id="leftMirrorYaw" min="0" max="90" value="45" step="1">
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Mirror Width</span>
+                            <span class="control-value" id="leftWidthValue">14"</span>
+                        </div>
+                        <input type="range" id="leftMirrorWidth" min="8" max="20" value="14" step="0.5">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">Right Mirror Controls</div>
+                <div class="mirror-group">
+                    <div class="mirror-group-title">
+                        <div class="mirror-indicator right"></div>
+                        Right Side Mirror
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>X Position (from center)</span>
+                            <span class="control-value" id="rightXValue">14"</span>
+                        </div>
+                        <input type="range" id="rightMirrorX" min="5" max="25" value="14" step="0.5">
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Y Position (from wall)</span>
+                            <span class="control-value" id="rightYValue">8"</span>
+                        </div>
+                        <input type="range" id="rightMirrorY" min="2" max="18" value="8" step="0.5">
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Yaw Angle <span class="tooltip" data-tip="Rotation in the horizontal plane">?</span></span>
+                            <span class="control-value" id="rightYawValue">-45°</span>
+                        </div>
+                        <input type="range" id="rightMirrorYaw" min="-90" max="0" value="-45" step="1">
+                    </div>
+                    
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Mirror Width</span>
+                            <span class="control-value" id="rightWidthValue">14"</span>
+                        </div>
+                        <input type="range" id="rightMirrorWidth" min="8" max="20" value="14" step="0.5">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">Head Position</div>
+                <div class="mirror-group">
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Distance from wall</span>
+                            <span class="control-value" id="headYValue">14"</span>
+                        </div>
+                        <input type="range" id="headY" min="10" max="18" value="14" step="0.5">
+                    </div>
+                    <div class="control-row">
+                        <div class="control-label">
+                            <span>Head X offset</span>
+                            <span class="control-value" id="headXValue">0"</span>
+                        </div>
+                        <input type="range" id="headX" min="-5" max="5" value="0" step="0.5">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title">Room Specifications</div>
+                <div class="specs-grid">
+                    <div class="spec-item">
+                        <span class="spec-label">Central Mirror</span>
+                        <span class="spec-value">23"W × 29"H</span>
+                    </div>
+                    <div class="spec-item">
+                        <span class="spec-label">Desktop</span>
+                        <span class="spec-value">29"W × 20"D</span>
+                    </div>
+                    <div class="spec-item">
+                        <span class="spec-label">Left Wall</span>
+                        <span class="spec-value">11" from back</span>
+                    </div>
+                    <div class="spec-item">
+                        <span class="spec-label">Mirror Gap</span>
+                        <span class="spec-value">7" to wall</span>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" onclick="resetDefaults()">Reset to Defaults</button>
+            <button class="btn btn-secondary" onclick="toggleRayDisplay()">Toggle Ray Display</button>
+        </div>
+    </div>
+    
+    <script>
+        // ============================================================================
+        // CONFIGURATION AND CONSTANTS
+        // ============================================================================
+        
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Scale: pixels per inch (for display)
+        const SCALE = 15;
+        const CANVAS_PADDING = 60;
+        
+        // Room dimensions (in inches)
+        const ROOM = {
+            centralMirrorWidth: 23,
+            centralMirrorHeight: 29,
+            deskWidth: 29,
+            deskDepth: 20,
+            leftWallExtension: 11,  // Left wall extends 11" from back wall
+            mirrorToLeftWall: 7     // 7" from central mirror edge to left wall
+        };
+        
+        // Human head model (typical adult dimensions in inches)
+        const HEAD = {
+            width: 6,              // Average head width
+            depth: 7.5,            // Average head depth (front to back)
+            eyeSetback: 1.5        // How far eyes are set back from front of face
+        };
+        
+        // Winston Porter Corrente Pivot-N-View Mirror specs (in inches)
+        const PIVOT_MIRROR_SPECS = {
+            overallWidth: 16,
+            overallHeight: 26,
+            reflectiveWidth: 14,
+            reflectiveHeight: 22,
+            pivotRange: 360        // degrees
+        };
+        
+        // State variables
+        let showRays = true;
+        let simulationState = {
+            leftMirror: {
+                x: -14,
+                y: 8,
+                yaw: 45,
+                width: PIVOT_MIRROR_SPECS.reflectiveWidth
+            },
+            rightMirror: {
+                x: 14,
+                y: 8,
+                yaw: -45,
+                width: PIVOT_MIRROR_SPECS.reflectiveWidth
+            },
+            head: {
+                x: 0,
+                y: 14
+            }
+        };
+        
+        // Default values for reset
+        const DEFAULTS = JSON.parse(JSON.stringify(simulationState));
+        
+        // ============================================================================
+        // GEOMETRY UTILITIES
+        // ============================================================================
+        
+        /**
+         * Convert degrees to radians
+         */
+        function degToRad(degrees) {
+            return degrees * Math.PI / 180;
+        }
+        
+        /**
+         * Normalize angle to [-180, 180] range
+         */
+        function normalizeAngle(angle) {
+            while (angle > 180) angle -= 360;
+            while (angle < -180) angle += 360;
+            return angle;
+        }
+        
+        /**
+         * Calculate dot product of two 2D vectors
+         */
+        function dot(v1, v2) {
+            return v1.x * v2.x + v1.y * v2.y;
+        }
+        
+        /**
+         * Normalize a 2D vector
+         */
+        function normalize(v) {
+            const mag = Math.sqrt(v.x * v.x + v.y * v.y);
+            if (mag === 0) return { x: 0, y: 0 };
+            return { x: v.x / mag, y: v.y / mag };
+        }
+        
+        /**
+         * Reflect a direction vector off a surface with given normal
+         */
+        function reflect(direction, normal) {
+            const d = dot(direction, normal);
+            return {
+                x: direction.x - 2 * d * normal.x,
+                y: direction.y - 2 * d * normal.y
+            };
+        }
+        
+        /**
+         * Get mirror endpoints given center position and yaw angle
+         */
+        function getMirrorEndpoints(centerX, centerY, width, yawDeg) {
+            const halfWidth = width / 2;
+            const angle = degToRad(yawDeg);
+            const dx = Math.cos(angle) * halfWidth;
+            const dy = Math.sin(angle) * halfWidth;
+            return {
+                p1: { x: centerX - dx, y: centerY - dy },
+                p2: { x: centerX + dx, y: centerY + dy }
+            };
+        }
+        
+        /**
+         * Get normal vector for a mirror (perpendicular to surface, pointing "up" in room coords)
+         */
+        function getMirrorNormal(yawDeg, facingDirection = 1) {
+            // Normal is perpendicular to the mirror surface
+            const angle = degToRad(yawDeg + 90 * facingDirection);
+            return normalize({ x: Math.cos(angle), y: Math.sin(angle) });
+        }
+        
+        /**
+         * Line segment intersection test
+         * Returns intersection point or null if no intersection
+         */
+        function lineIntersection(p1, p2, p3, p4) {
+            const x1 = p1.x, y1 = p1.y, x2 = p2.x, y2 = p2.y;
+            const x3 = p3.x, y3 = p3.y, x4 = p4.x, y4 = p4.y;
+            
+            const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+            if (Math.abs(denom) < 0.0001) return null;
+            
+            const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+            const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+            
+            if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+                return {
+                    x: x1 + t * (x2 - x1),
+                    y: y1 + t * (y2 - y1),
+                    t: t
+                };
+            }
+            return null;
+        }
+        
+        /**
+         * Ray-segment intersection (ray starts at origin with direction, segment is p1-p2)
+         */
+        function raySegmentIntersection(origin, direction, p1, p2, maxDist = 1000) {
+            const rayEnd = {
+                x: origin.x + direction.x * maxDist,
+                y: origin.y + direction.y * maxDist
+            };
+            return lineIntersection(origin, rayEnd, p1, p2);
+        }
+        
+        // ============================================================================
+        // SCENE OBJECTS
+        // ============================================================================
+        
+        /**
+         * Get all wall segments for collision detection
+         */
+        function getWallSegments() {
+            // The central mirror position (center of room coordinate system)
+            const centralMirrorLeft = -ROOM.centralMirrorWidth / 2;
+            const centralMirrorRight = ROOM.centralMirrorWidth / 2;
+            
+            // Left wall position: 7" from mirror edge
+            const leftWallX = centralMirrorLeft - ROOM.mirrorToLeftWall;
+            
+            return [
+                // Back wall (bottom of view) - from left wall to right edge of room
+                {
+                    p1: { x: leftWallX, y: 0 },
+                    p2: { x: 40, y: 0 },  // Extend right side arbitrarily
+                    name: 'back'
+                },
+                // Left wall - extends 11" from back wall
+                {
+                    p1: { x: leftWallX, y: 0 },
+                    p2: { x: leftWallX, y: ROOM.leftWallExtension },
+                    name: 'left'
+                }
+            ];
+        }
+        
+        /**
+         * Get central mirror segment
+         */
+        function getCentralMirror() {
+            const halfWidth = ROOM.centralMirrorWidth / 2;
+            return {
+                p1: { x: -halfWidth, y: 0 },
+                p2: { x: halfWidth, y: 0 },
+                normal: { x: 0, y: 1 }  // Points into the room
+            };
+        }
+        
+        /**
+         * Get desk bounds
+         */
+        function getDeskBounds() {
+            const centralMirrorLeft = -ROOM.centralMirrorWidth / 2;
+            const leftWallX = centralMirrorLeft - ROOM.mirrorToLeftWall;
+            
+            return {
+                left: leftWallX,
+                right: leftWallX + ROOM.deskWidth,
+                top: 0,
+                bottom: ROOM.deskDepth
+            };
+        }
+        
+        /**
+         * Get eye position (slightly in front of head center)
+         */
+        function getEyePosition() {
+            return {
+                x: simulationState.head.x,
+                y: simulationState.head.y - HEAD.depth / 2 + HEAD.eyeSetback
+            };
+        }
+        
+        /**
+         * Get back-of-head target points (arc of points on the back of the head)
+         */
+        function getBackOfHeadTargets(numPoints = 7) {
+            const targets = [];
+            const headCenterX = simulationState.head.x;
+            const headCenterY = simulationState.head.y;
+            const radius = HEAD.width / 2;
+            
+            // Generate points along the back arc of the head (from about 120° to 240°)
+            for (let i = 0; i < numPoints; i++) {
+                const angle = degToRad(120 + (i / (numPoints - 1)) * 120);
+                targets.push({
+                    x: headCenterX + Math.cos(angle) * radius,
+                    y: headCenterY + Math.sin(angle) * radius
+                });
+            }
+            return targets;
+        }
+        
+        // ============================================================================
+        // RAY TRACING
+        // ============================================================================
+        
+        /**
+         * Check if a ray is blocked by walls
+         */
+        function isRayBlockedByWalls(origin, target) {
+            const walls = getWallSegments();
+            for (const wall of walls) {
+                const intersection = lineIntersection(origin, target, wall.p1, wall.p2);
+                if (intersection) {
+                    // Check if intersection is between origin and target (not at endpoints)
+                    const distToIntersection = Math.sqrt(
+                        Math.pow(intersection.x - origin.x, 2) + 
+                        Math.pow(intersection.y - origin.y, 2)
+                    );
+                    const distToTarget = Math.sqrt(
+                        Math.pow(target.x - origin.x, 2) + 
+                        Math.pow(target.y - origin.y, 2)
+                    );
+                    if (distToIntersection < distToTarget - 0.1) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        /**
+         * Check if a point is visible from another point (not blocked by head)
+         */
+        function isBlockedByHead(origin, target) {
+            const headCenter = { x: simulationState.head.x, y: simulationState.head.y };
+            const headRadius = HEAD.width / 2;
+            
+            // Simple circle intersection test
+            const dx = target.x - origin.x;
+            const dy = target.y - origin.y;
+            const fx = origin.x - headCenter.x;
+            const fy = origin.y - headCenter.y;
+            
+            const a = dx * dx + dy * dy;
+            const b = 2 * (fx * dx + fy * dy);
+            const c = (fx * fx + fy * fy) - headRadius * headRadius;
+            
+            let discriminant = b * b - 4 * a * c;
+            if (discriminant < 0) return false;
+            
+            discriminant = Math.sqrt(discriminant);
+            const t1 = (-b - discriminant) / (2 * a);
+            const t2 = (-b + discriminant) / (2 * a);
+            
+            return (t1 >= 0.05 && t1 <= 0.95) || (t2 >= 0.05 && t2 <= 0.95);
+        }
+        
+        /**
+         * Trace a reflection path: Eye → Side Mirror → Central Mirror → Back of Head
+         * Returns path information including success status and ray segments
+         */
+        function traceReflectionPath(sideMirror, targetPoint) {
+            const eye = getEyePosition();
+            const centralMirror = getCentralMirror();
+            
+            // Get side mirror geometry
+            const mirrorEndpoints = getMirrorEndpoints(
+                sideMirror.x, sideMirror.y, sideMirror.width, sideMirror.yaw
+            );
+            
+            // Determine which way the mirror is facing (toward eye)
+            const mirrorCenter = { x: sideMirror.x, y: sideMirror.y };
+            const toEye = normalize({ x: eye.x - mirrorCenter.x, y: eye.y - mirrorCenter.y });
+            const normal1 = getMirrorNormal(sideMirror.yaw, 1);
+            const normal2 = getMirrorNormal(sideMirror.yaw, -1);
+            const sideMirrorNormal = dot(toEye, normal1) > 0 ? normal1 : normal2;
+            
+            // We need to find where on the side mirror we should look
+            // to see the target reflected in the central mirror
+            
+            // For each point on the side mirror, calculate if the reflection path works
+            const numSamples = 20;
+            let bestPath = null;
+            
+            for (let i = 0; i <= numSamples; i++) {
+                const t = i / numSamples;
+                const samplePoint = {
+                    x: mirrorEndpoints.p1.x + t * (mirrorEndpoints.p2.x - mirrorEndpoints.p1.x),
+                    y: mirrorEndpoints.p1.y + t * (mirrorEndpoints.p2.y - mirrorEndpoints.p1.y)
+                };
+                
+                // Direction from eye to this point on side mirror
+                const dirToSideMirror = normalize({
+                    x: samplePoint.x - eye.x,
+                    y: samplePoint.y - eye.y
+                });
+                
+                // Check if this direction actually hits the front of the side mirror
+                if (dot(dirToSideMirror, sideMirrorNormal) >= 0) continue;
+                
+                // Reflect off side mirror
+                const reflectedDir1 = reflect(dirToSideMirror, sideMirrorNormal);
+                
+                // Find where this reflected ray hits the central mirror
+                const centralHit = raySegmentIntersection(
+                    samplePoint, reflectedDir1, centralMirror.p1, centralMirror.p2
+                );
+                
+                if (!centralHit) continue;
+                
+                // Check if ray is blocked by walls on way to central mirror
+                if (isRayBlockedByWalls(samplePoint, centralHit)) continue;
+                
+                // Reflect off central mirror
+                const reflectedDir2 = reflect(reflectedDir1, centralMirror.normal);
+                
+                // Check if this reflected ray could reach the back of head target
+                const dirToTarget = normalize({
+                    x: targetPoint.x - centralHit.x,
+                    y: targetPoint.y - centralHit.y
+                });
+                
+                // Check angle match (how close the reflection is to target direction)
+                const angleDiff = Math.abs(
+                    Math.atan2(reflectedDir2.y, reflectedDir2.x) - 
+                    Math.atan2(dirToTarget.y, dirToTarget.x)
+                );
+                
+                if (angleDiff < 0.3) {  // Allow some tolerance
+                    // Verify the path isn't blocked
+                    const pathClear = 
+                        !isRayBlockedByWalls(eye, samplePoint) &&
+                        !isRayBlockedByWalls(centralHit, targetPoint) &&
+                        !isBlockedByHead(eye, samplePoint) &&
+                        !isBlockedByHead(samplePoint, centralHit);
+                    
+                    if (pathClear || bestPath === null) {
+                        bestPath = {
+                            success: pathClear,
+                            segments: [
+                                { from: eye, to: samplePoint },
+                                { from: samplePoint, to: centralHit },
+                                { from: centralHit, to: targetPoint }
+                            ],
+                            angleDiff: angleDiff
+                        };
+                        
+                        if (pathClear) break;
+                    }
+                }
+            }
+            
+            return bestPath;
+        }
+        
+        /**
+         * Run full ray trace simulation
+         */
+        function runSimulation() {
+            const targets = getBackOfHeadTargets(9);
+            const results = {
+                leftMirror: [],
+                rightMirror: [],
+                successCount: 0
+            };
+            
+            // Test paths through left mirror
+            for (const target of targets) {
+                const path = traceReflectionPath(simulationState.leftMirror, target);
+                if (path) {
+                    results.leftMirror.push(path);
+                    if (path.success) results.successCount++;
+                }
+            }
+            
+            // Test paths through right mirror
+            for (const target of targets) {
+                const path = traceReflectionPath(simulationState.rightMirror, target);
+                if (path) {
+                    results.rightMirror.push(path);
+                    if (path.success) results.successCount++;
+                }
+            }
+            
+            return results;
+        }
+        
+        // ============================================================================
+        // RENDERING
+        // ============================================================================
+        
+        /**
+         * Convert room coordinates to canvas coordinates
+         */
+        function toCanvas(x, y) {
+            // Center of room is at canvas center, Y is flipped (room Y increases up, canvas Y increases down)
+            return {
+                x: canvas.width / 2 + x * SCALE,
+                y: canvas.height - CANVAS_PADDING - y * SCALE
+            };
+        }
+        
+        /**
+         * Draw the simulation
+         */
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Run simulation
+            const simResults = runSimulation();
+            
+            // Draw grid
+            drawGrid();
+            
+            // Draw walls
+            drawWalls();
+            
+            // Draw desk
+            drawDesk();
+            
+            // Draw central mirror
+            drawCentralMirror();
+            
+            // Draw side mirrors
+            drawSideMirror(simulationState.leftMirror, '#ff8844', 'Left');
+            drawSideMirror(simulationState.rightMirror, '#88ccff', 'Right');
+            
+            // Draw rays if enabled
+            if (showRays) {
+                drawRays(simResults);
+            }
+            
+            // Draw head
+            drawHead();
+            
+            // Draw eye
+            drawEye();
+            
+            // Update status indicator
+            updateStatus(simResults);
+        }
+        
+        /**
+         * Draw coordinate grid
+         */
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(42, 42, 58, 0.5)';
+            ctx.lineWidth = 0.5;
+            
+            // Draw grid lines every 5 inches
+            for (let x = -30; x <= 30; x += 5) {
+                const start = toCanvas(x, -5);
+                const end = toCanvas(x, 25);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+            }
+            
+            for (let y = -5; y <= 25; y += 5) {
+                const start = toCanvas(-30, y);
+                const end = toCanvas(30, y);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+            }
+        }
+        
+        /**
+         * Draw walls
+         */
+        function drawWalls() {
+            const walls = getWallSegments();
+            
+            ctx.strokeStyle = '#666677';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            
+            for (const wall of walls) {
+                const p1 = toCanvas(wall.p1.x, wall.p1.y);
+                const p2 = toCanvas(wall.p2.x, wall.p2.y);
+                
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+            }
+            
+            // Draw wall fill (shading behind walls)
+            ctx.fillStyle = 'rgba(40, 40, 50, 0.8)';
+            
+            // Back wall area
+            const backLeft = toCanvas(-30, 0);
+            const backRight = toCanvas(40, 0);
+            ctx.fillRect(backLeft.x, backLeft.y, backRight.x - backLeft.x, 40);
+            
+            // Left wall area
+            const leftWallX = -ROOM.centralMirrorWidth / 2 - ROOM.mirrorToLeftWall;
+            const leftTop = toCanvas(leftWallX, ROOM.leftWallExtension);
+            const leftBottom = toCanvas(leftWallX, 0);
+            ctx.fillRect(leftTop.x - 40, leftTop.y, 40, leftBottom.y - leftTop.y);
+        }
+        
+        /**
+         * Draw desk surface
+         */
+        function drawDesk() {
+            const desk = getDeskBounds();
+            const topLeft = toCanvas(desk.left, desk.bottom);
+            const bottomRight = toCanvas(desk.right, desk.top);
+            
+            ctx.fillStyle = 'rgba(60, 50, 40, 0.4)';
+            ctx.strokeStyle = '#8b7355';
+            ctx.lineWidth = 2;
+            
+            ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+            ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+            
+            // Label
+            ctx.fillStyle = '#8b7355';
+            ctx.font = '11px JetBrains Mono';
+            ctx.textAlign = 'center';
+            const labelPos = toCanvas((desk.left + desk.right) / 2, desk.bottom / 2);
+            ctx.fillText('DESK', labelPos.x, labelPos.y);
+        }
+        
+        /**
+         * Draw central mirror
+         */
+        function drawCentralMirror() {
+            const mirror = getCentralMirror();
+            const p1 = toCanvas(mirror.p1.x, mirror.p1.y);
+            const p2 = toCanvas(mirror.p2.x, mirror.p2.y);
+            
+            // Mirror backing
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+            
+            // Mirror surface glow
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+            
+            // Label
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = '10px JetBrains Mono';
+            ctx.textAlign = 'center';
+            const labelPos = toCanvas(0, -2);
+            ctx.fillText('CENTRAL MIRROR', labelPos.x, labelPos.y);
+        }
+        
+        /**
+         * Draw a side mirror
+         */
+        function drawSideMirror(mirror, color, label) {
+            const endpoints = getMirrorEndpoints(mirror.x, mirror.y, mirror.width, mirror.yaw);
+            const p1 = toCanvas(endpoints.p1.x, endpoints.p1.y);
+            const p2 = toCanvas(endpoints.p2.x, endpoints.p2.y);
+            
+            // Mirror surface
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+            
+            // Glow
+            ctx.strokeStyle = color.replace(')', ', 0.3)').replace('rgb', 'rgba');
+            if (!color.includes('rgba')) {
+                ctx.strokeStyle = color + '4d';  // Add alpha
+            }
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+            
+            // Pivot point indicator
+            const center = toCanvas(mirror.x, mirror.y);
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Normal direction indicator
+            const normal = getMirrorNormal(mirror.yaw, 1);
+            const normalEnd = toCanvas(
+                mirror.x + normal.x * 2,
+                mirror.y + normal.y * 2
+            );
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(center.x, center.y);
+            ctx.lineTo(normalEnd.x, normalEnd.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Label
+            ctx.fillStyle = color;
+            ctx.font = '9px JetBrains Mono';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, center.x, center.y - 15);
+        }
+        
+        /**
+         * Draw the head (top-down view)
+         */
+        function drawHead() {
+            const center = toCanvas(simulationState.head.x, simulationState.head.y);
+            const radiusX = HEAD.width / 2 * SCALE;
+            const radiusY = HEAD.depth / 2 * SCALE;
+            
+            // Head shape (ellipse)
+            ctx.fillStyle = 'rgba(255, 200, 150, 0.6)';
+            ctx.strokeStyle = '#ffcc99';
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            ctx.ellipse(center.x, center.y, radiusX, radiusY, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Hair/back of head indication (darker arc)
+            ctx.fillStyle = 'rgba(100, 70, 50, 0.5)';
+            ctx.beginPath();
+            ctx.ellipse(center.x, center.y, radiusX, radiusY, 0, Math.PI * 0.65, Math.PI * 1.35);
+            ctx.fill();
+            
+            // Mark back of head targets
+            const targets = getBackOfHeadTargets(9);
+            ctx.fillStyle = '#ff6666';
+            for (const target of targets) {
+                const pos = toCanvas(target.x, target.y);
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        /**
+         * Draw the eye position
+         */
+        function drawEye() {
+            const eye = getEyePosition();
+            const pos = toCanvas(eye.x, eye.y);
+            
+            // Eye
+            ctx.fillStyle = '#44aaff';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Pupil
+            ctx.fillStyle = '#000033';
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y - 1, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Label
+            ctx.fillStyle = '#44aaff';
+            ctx.font = '9px JetBrains Mono';
+            ctx.textAlign = 'center';
+            ctx.fillText('EYE', pos.x, pos.y + 15);
+        }
+        
+        /**
+         * Draw ray paths
+         */
+        function drawRays(simResults) {
+            // Draw left mirror rays
+            for (const path of simResults.leftMirror) {
+                drawPath(path, '#ff8844');
+            }
+            
+            // Draw right mirror rays
+            for (const path of simResults.rightMirror) {
+                drawPath(path, '#88ccff');
+            }
+        }
+        
+        /**
+         * Draw a single ray path
+         */
+        function drawPath(path, baseColor) {
+            if (!path || !path.segments) return;
+            
+            const color = path.success ? '#00ff88' : '#ff4466';
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = path.success ? 2 : 1;
+            ctx.globalAlpha = path.success ? 0.8 : 0.4;
+            
+            for (const segment of path.segments) {
+                const from = toCanvas(segment.from.x, segment.from.y);
+                const to = toCanvas(segment.to.x, segment.to.y);
+                
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.stroke();
+                
+                // Draw arrowhead for direction
+                if (path.success) {
+                    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+                    const arrowLen = 6;
+                    ctx.beginPath();
+                    ctx.moveTo(to.x, to.y);
+                    ctx.lineTo(
+                        to.x - arrowLen * Math.cos(angle - 0.4),
+                        to.y - arrowLen * Math.sin(angle - 0.4)
+                    );
+                    ctx.moveTo(to.x, to.y);
+                    ctx.lineTo(
+                        to.x - arrowLen * Math.cos(angle + 0.4),
+                        to.y - arrowLen * Math.sin(angle + 0.4)
+                    );
+                    ctx.stroke();
+                }
+            }
+            
+            ctx.globalAlpha = 1;
+        }
+        
+        /**
+         * Update status indicator and coverage
+         */
+        function updateStatus(simResults) {
+            const totalTargets = getBackOfHeadTargets(9).length * 2;  // Both mirrors
+            const coverage = Math.round((simResults.successCount / totalTargets) * 100);
+            
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            const coverageFill = document.getElementById('coverageFill');
+            const coverageValue = document.getElementById('coverageValue');
+            
+            coverageFill.style.width = coverage + '%';
+            coverageValue.textContent = coverage + '%';
+            
+            if (simResults.successCount > 0) {
+                statusIndicator.className = 'status-indicator pass';
+                statusText.textContent = 'PASS ✓';
+            } else {
+                statusIndicator.className = 'status-indicator fail';
+                statusText.textContent = 'FAIL ✗';
+            }
+        }
+        
+        // ============================================================================
+        // UI CONTROLS
+        // ============================================================================
+        
+        /**
+         * Initialize all control bindings
+         */
+        function initControls() {
+            // Left mirror controls
+            bindSlider('leftMirrorX', 'leftXValue', (v) => {
+                simulationState.leftMirror.x = parseFloat(v);
+                return v + '"';
+            });
+            
+            bindSlider('leftMirrorY', 'leftYValue', (v) => {
+                simulationState.leftMirror.y = parseFloat(v);
+                return v + '"';
+            });
+            
+            bindSlider('leftMirrorYaw', 'leftYawValue', (v) => {
+                simulationState.leftMirror.yaw = parseFloat(v);
+                return v + '°';
+            });
+            
+            bindSlider('leftMirrorWidth', 'leftWidthValue', (v) => {
+                simulationState.leftMirror.width = parseFloat(v);
+                return v + '"';
+            });
+            
+            // Right mirror controls
+            bindSlider('rightMirrorX', 'rightXValue', (v) => {
+                simulationState.rightMirror.x = parseFloat(v);
+                return v + '"';
+            });
+            
+            bindSlider('rightMirrorY', 'rightYValue', (v) => {
+                simulationState.rightMirror.y = parseFloat(v);
+                return v + '"';
+            });
+            
+            bindSlider('rightMirrorYaw', 'rightYawValue', (v) => {
+                simulationState.rightMirror.yaw = parseFloat(v);
+                return v + '°';
+            });
+            
+            bindSlider('rightMirrorWidth', 'rightWidthValue', (v) => {
+                simulationState.rightMirror.width = parseFloat(v);
+                return v + '"';
+            });
+            
+            // Head controls
+            bindSlider('headY', 'headYValue', (v) => {
+                simulationState.head.y = parseFloat(v);
+                return v + '"';
+            });
+            
+            bindSlider('headX', 'headXValue', (v) => {
+                simulationState.head.x = parseFloat(v);
+                return v + '"';
+            });
+        }
+        
+        /**
+         * Bind a slider to update state and display
+         */
+        function bindSlider(sliderId, displayId, updateFn) {
+            const slider = document.getElementById(sliderId);
+            const display = document.getElementById(displayId);
+            
+            slider.addEventListener('input', () => {
+                display.textContent = updateFn(slider.value);
+                draw();
+            });
+        }
+        
+        /**
+         * Reset all controls to default values
+         */
+        function resetDefaults() {
+            simulationState = JSON.parse(JSON.stringify(DEFAULTS));
+            
+            // Update slider positions
+            document.getElementById('leftMirrorX').value = DEFAULTS.leftMirror.x;
+            document.getElementById('leftMirrorY').value = DEFAULTS.leftMirror.y;
+            document.getElementById('leftMirrorYaw').value = DEFAULTS.leftMirror.yaw;
+            document.getElementById('leftMirrorWidth').value = DEFAULTS.leftMirror.width;
+            
+            document.getElementById('rightMirrorX').value = DEFAULTS.rightMirror.x;
+            document.getElementById('rightMirrorY').value = DEFAULTS.rightMirror.y;
+            document.getElementById('rightMirrorYaw').value = DEFAULTS.rightMirror.yaw;
+            document.getElementById('rightMirrorWidth').value = DEFAULTS.rightMirror.width;
+            
+            document.getElementById('headY').value = DEFAULTS.head.y;
+            document.getElementById('headX').value = DEFAULTS.head.x;
+            
+            // Update displays
+            document.getElementById('leftXValue').textContent = DEFAULTS.leftMirror.x + '"';
+            document.getElementById('leftYValue').textContent = DEFAULTS.leftMirror.y + '"';
+            document.getElementById('leftYawValue').textContent = DEFAULTS.leftMirror.yaw + '°';
+            document.getElementById('leftWidthValue').textContent = DEFAULTS.leftMirror.width + '"';
+            
+            document.getElementById('rightXValue').textContent = DEFAULTS.rightMirror.x + '"';
+            document.getElementById('rightYValue').textContent = DEFAULTS.rightMirror.y + '"';
+            document.getElementById('rightYawValue').textContent = DEFAULTS.rightMirror.yaw + '°';
+            document.getElementById('rightWidthValue').textContent = DEFAULTS.rightMirror.width + '"';
+            
+            document.getElementById('headYValue').textContent = DEFAULTS.head.y + '"';
+            document.getElementById('headXValue').textContent = DEFAULTS.head.x + '"';
+            
+            draw();
+        }
+        
+        /**
+         * Toggle ray display on/off
+         */
+        function toggleRayDisplay() {
+            showRays = !showRays;
+            draw();
+        }
+        
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+        
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            initControls();
+            draw();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            draw();
+        });
+    </script>
+</body>
+</html>

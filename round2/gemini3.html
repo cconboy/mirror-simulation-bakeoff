@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Makeup Mirror Setup Simulation</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-bg: #2d2d2d;
+            --text-color: #e0e0e0;
+            --accent-color: #4caf50;
+            --danger-color: #f44336;
+            --grid-line: #3a3a3a;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        header {
+            padding: 10px 20px;
+            background-color: var(--panel-bg);
+            border-bottom: 1px solid #444;
+            flex: 0 0 auto;
+        }
+
+        h1 { margin: 0; font-size: 1.2rem; }
+        p.subtitle { margin: 5px 0 0; font-size: 0.9rem; color: #aaa; }
+
+        #main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Canvas Area */
+        #canvas-wrapper {
+            flex: 1;
+            position: relative;
+            background-color: #121212;
+            overflow: hidden; /* Canvas scales to fit */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background-color: #181818;
+            cursor: crosshair;
+        }
+
+        /* HUD Overlays */
+        #status-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 1.5rem;
+            background-color: rgba(0,0,0,0.8);
+            border: 2px solid #555;
+            pointer-events: none;
+        }
+        .status-pass { color: var(--accent-color); border-color: var(--accent-color) !important; }
+        .status-fail { color: var(--danger-color); border-color: var(--danger-color) !important; }
+
+        /* Controls Panel */
+        #controls-panel {
+            width: 340px;
+            background-color: var(--panel-bg);
+            border-left: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex: 0 0 auto;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 15px;
+        }
+
+        .control-group h3 {
+            margin: 0 0 10px 0;
+            font-size: 1rem;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            color: #ccc;
+        }
+
+        input[type=range] {
+            width: 100%;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .val-display { font-family: monospace; color: var(--accent-color); }
+
+        button#reset-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: #444;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: auto; /* Push to bottom */
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button#reset-btn:hover { background-color: #555; }
+
+        /* Tooltip help */
+        .tooltip {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: -5px;
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 
+    SIMULATION OVERVIEW
+    ===================
+    This tool simulates a makeup station with a central fixed mirror and two pivoting side mirrors.
+    The goal is to configure the side mirrors to reflect the back of the user's head into the central mirror,
+    and then back to the user's eyes.
+
+    Geometry:
+    - Top-Down View (X, Y plane).
+    - Bottom Wall: Y = 0.
+    - Left Wall: X = 0, length 11".
+    - Desk: 29" W x 20" D.
+    - Central Mirror: 23" W, fixed on bottom wall, starts 7" from left wall.
+
+    Mirror Specs (Default):
+    - Based on Winston Porter Corrente Pivot 'N View.
+    - Reflective Surface: 14" W x 22" H.
+    - Pivot Axis: Vertical (Yaw). 
+
+    Usage:
+    - Use the sliders on the right to position and rotate the left/right auxiliary mirrors.
+    - "Pass" indicates the eye can see the back of the head via the side mirror.
+    - Green rays = Successful visibility path.
+    - Red rays = Missed path or blocked by wall/head.
+-->
+
+<header>
+    <h1>Makeup Station Mirror Configurator</h1>
+    <p class="subtitle">Adjust side mirrors to see the back of your head. Green lines indicate visibility.</p>
+</header>
+
+<div id="main-container">
+    <div id="canvas-wrapper">
+        <canvas id="simCanvas"></canvas>
+        <div id="status-indicator" class="status-fail">FAIL</div>
+    </div>
+
+    <div id="controls-panel">
+        
+        <div class="control-group">
+            <h3>Left Mirror (Pivot) <span id="val-lm-vis" style="font-size:0.8em"></span></h3>
+            <div class="tooltip">Default: Wall mounted (X=0)</div>
+            
+            <label>Pos X (in) <span id="val-lm-x" class="val-display">0</span></label>
+            <input type="range" id="inp-lm-x" min="-5" max="10" step="0.1">
+
+            <label>Pos Y (in) <span id="val-lm-y" class="val-display">10</span></label>
+            <input type="range" id="inp-lm-y" min="0" max="25" step="0.1">
+
+            <label>Yaw (deg) <span id="val-lm-yaw" class="val-display">45</span></label>
+            <input type="range" id="inp-lm-yaw" min="-90" max="90" step="1">
+            
+            <label>Pitch (deg) <span id="val-lm-pitch" class="val-display">0</span></label>
+            <input type="range" id="inp-lm-pitch" min="-20" max="20" step="1">
+
+            <label>Width (in) <span id="val-lm-w" class="val-display">14</span></label>
+            <input type="range" id="inp-lm-w" min="5" max="20" step="0.5">
+        </div>
+
+        <div class="control-group">
+            <h3>Right Mirror (Pivot) <span id="val-rm-vis" style="font-size:0.8em"></span></h3>
+            <div class="tooltip">Default: Right side of desk</div>
+
+            <label>Pos X (in) <span id="val-rm-x" class="val-display">35</span></label>
+            <input type="range" id="inp-rm-x" min="25" max="45" step="0.1">
+
+            <label>Pos Y (in) <span id="val-rm-y" class="val-display">5</span></label>
+            <input type="range" id="inp-rm-y" min="0" max="25" step="0.1">
+
+            <label>Yaw (deg) <span id="val-rm-yaw" class="val-display">-45</span></label>
+            <input type="range" id="inp-rm-yaw" min="-90" max="90" step="1">
+
+            <label>Pitch (deg) <span id="val-rm-pitch" class="val-display">0</span></label>
+            <input type="range" id="inp-rm-pitch" min="-20" max="20" step="1">
+            
+            <label>Width (in) <span id="val-rm-w" class="val-display">14</span></label>
+            <input type="range" id="inp-rm-w" min="5" max="20" step="0.5">
+        </div>
+
+        <div class="control-group">
+            <h3>User / Head</h3>
+            <label>Eye Dist from Wall (in) <span id="val-head-y" class="val-display">18</span></label>
+            <input type="range" id="inp-head-y" min="10" max="30" step="0.5">
+            
+            <label>Eye Height (in) <span id="val-eye-h" class="val-display">46</span></label>
+            <input type="range" id="inp-eye-h" min="40" max="55" step="0.5">
+            <div class="tooltip">Assuming seated position.</div>
+        </div>
+
+        <button id="reset-btn">Reset Defaults</button>
+    </div>
+</div>
+
+<script>
+/**
+ * Configuration and State
+ */
+// World Geometry (Top-Down, Origin 0,0 is corner of Back Wall/Left Wall intersection line extended)
+// Actually, let's make 0,0 the inner corner intersection.
+// X+ is right, Y+ is towards user (away from wall).
+const GEO = {
+    leftWallLength: 11, // along Y axis at X=0
+    mirrorGap: 7,       // space on back wall before central mirror
+    mirrorWidth: 23,    
+    deskWidth: 29,
+    deskDepth: 20,
+    centralMirrorHeight: 29, // for vertical calculations
+    centralMirrorBaseZ: 30,  // Height from floor to bottom of mirror (approx desk height)
+};
+
+// Based on Wayfair Product: Winston Porter Corrente Pivot 'N View
+// Reflective surface: 14" W x 22" H
+const MIRROR_DEFAULT = {
+    width: 14,
+    height: 22,
+    mountHeight: 32, // Center of mirror relative to floor (approx)
+};
+
+// Initial State
+let state = {
+    // Left Mirror
+    lm: { x: 0, y: 10, yaw: 35, pitch: 0, w: 14, h: 22, z: 42 }, // On left wall
+    // Right Mirror
+    rm: { x: 32, y: 8, yaw: -35, pitch: 0, w: 14, h: 22, z: 42 }, // To right of central mirror
+    // Head
+    head: { 
+        x: 14.5, // Center of desk (29/2)
+        y: 18,   // Distance from back wall
+        width: 7, 
+        depth: 8, 
+        eyeZ: 44, // Eye height from floor
+        eyeSpacing: 2.5
+    }
+};
+
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+
+// UI Elements
+const els = {
+    lm: {
+        x: document.getElementById('inp-lm-x'),
+        y: document.getElementById('inp-lm-y'),
+        yaw: document.getElementById('inp-lm-yaw'),
+        pitch: document.getElementById('inp-lm-pitch'),
+        w: document.getElementById('inp-lm-w'),
+        valX: document.getElementById('val-lm-x'),
+        valY: document.getElementById('val-lm-y'),
+        valYaw: document.getElementById('val-lm-yaw'),
+        valPitch: document.getElementById('val-lm-pitch'),
+        valW: document.getElementById('val-lm-w'),
+    },
+    rm: {
+        x: document.getElementById('inp-rm-x'),
+        y: document.getElementById('inp-rm-y'),
+        yaw: document.getElementById('inp-rm-yaw'),
+        pitch: document.getElementById('inp-rm-pitch'),
+        w: document.getElementById('inp-rm-w'),
+        valX: document.getElementById('val-rm-x'),
+        valY: document.getElementById('val-rm-y'),
+        valYaw: document.getElementById('val-rm-yaw'),
+        valPitch: document.getElementById('val-rm-pitch'),
+        valW: document.getElementById('val-rm-w'),
+    },
+    head: {
+        y: document.getElementById('inp-head-y'),
+        z: document.getElementById('inp-eye-h'),
+        valY: document.getElementById('val-head-y'),
+        valZ: document.getElementById('val-eye-h'),
+    },
+    status: document.getElementById('status-indicator'),
+    reset: document.getElementById('reset-btn')
+};
+
+/**
+ * Initialization and Event Listeners
+ */
+function init() {
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    
+    // Bind Controls
+    bindControl(els.lm, 'lm');
+    bindControl(els.rm, 'rm');
+    
+    els.head.y.addEventListener('input', (e) => {
+        state.head.y = parseFloat(e.target.value);
+        els.head.valY.innerText = state.head.y;
+        requestDraw();
+    });
+    els.head.z.addEventListener('input', (e) => {
+        state.head.eyeZ = parseFloat(e.target.value);
+        els.head.valZ.innerText = state.head.eyeZ;
+        requestDraw();
+    });
+
+    els.reset.addEventListener('click', resetDefaults);
+
+    // Initial Trigger
+    updateUIValues();
+    requestDraw();
+}
+
+function bindControl(group, key) {
+    const update = () => {
+        state[key].x = parseFloat(group.x.value);
+        state[key].y = parseFloat(group.y.value);
+        state[key].yaw = parseFloat(group.yaw.value);
+        state[key].pitch = parseFloat(group.pitch.value);
+        state[key].w = parseFloat(group.w.value);
+        
+        group.valX.innerText = state[key].x;
+        group.valY.innerText = state[key].y;
+        group.valYaw.innerText = state[key].yaw;
+        group.valPitch.innerText = state[key].pitch;
+        group.valW.innerText = state[key].w;
+        requestDraw();
+    };
+    
+    group.x.addEventListener('input', update);
+    group.y.addEventListener('input', update);
+    group.yaw.addEventListener('input', update);
+    group.pitch.addEventListener('input', update);
+    group.w.addEventListener('input', update);
+}
+
+function resetDefaults() {
+    state.lm = { x: 0, y: 10, yaw: 35, pitch: 0, w: 14, h: 22, z: 42 };
+    state.rm = { x: 32, y: 8, yaw: -35, pitch: 0, w: 14, h: 22, z: 42 };
+    state.head.y = 18;
+    state.head.eyeZ = 44;
+    updateUIValues();
+    requestDraw();
+}
+
+function updateUIValues() {
+    const setGroup = (g, s) => {
+        g.x.value = s.x; g.valX.innerText = s.x;
+        g.y.value = s.y; g.valY.innerText = s.y;
+        g.yaw.value = s.yaw; g.valYaw.innerText = s.yaw;
+        g.pitch.value = s.pitch; g.valPitch.innerText = s.pitch;
+        g.w.value = s.w; g.valW.innerText = s.w;
+    };
+    setGroup(els.lm, state.lm);
+    setGroup(els.rm, state.rm);
+    els.head.y.value = state.head.y; els.head.valY.innerText = state.head.y;
+    els.head.z.value = state.head.eyeZ; els.head.valZ.innerText = state.head.eyeZ;
+}
+
+/**
+ * Rendering and Logic
+ */
+let animationFrame;
+const SCALE = 15; // Pixels per Inch
+const OFFSET_X = 50; // Canvas padding X
+const OFFSET_Y = 50; // Canvas padding Y (from bottom, drawing upwards)
+
+function resizeCanvas() {
+    const wrapper = document.getElementById('canvas-wrapper');
+    canvas.width = wrapper.clientWidth;
+    canvas.height = wrapper.clientHeight;
+    requestDraw();
+}
+
+function requestDraw() {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = requestAnimationFrame(draw);
+}
+
+// Coordinate Transform: World (inches) -> Canvas (pixels)
+function toCanvas(x, y) {
+    // World origin (0,0) is at the back-left corner.
+    // Canvas: Center the desk setup roughly.
+    // Flip Y because canvas Y is down.
+    
+    const cw = canvas.width;
+    const ch = canvas.height;
+    
+    // Center the 40" wide scene in the canvas
+    const sceneCenterX = 20; 
+    const sceneCenterY = 15;
+    
+    const cx = (x - sceneCenterX) * SCALE + cw / 2;
+    const cy = ch - ((y - sceneCenterY) * SCALE + ch / 2); // Flip Y
+    return { x: cx, y: cy };
+}
+
+function draw() {
+    // Clear
+    ctx.fillStyle = '#181818';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Grid (12 inch squares)
+    drawGrid();
+
+    // Draw Geometry (Walls, Desk, Mirrors)
+    drawEnvironment();
+    
+    // Draw Head
+    drawHead();
+
+    // Ray Tracing
+    const leftRes = traceMirrorSystem(state.lm, 'Left');
+    const rightRes = traceMirrorSystem(state.rm, 'Right');
+    
+    // Update Status
+    const pass = leftRes || rightRes;
+    els.status.innerText = pass ? "PASS" : "FAIL";
+    els.status.className = pass ? "status-pass" : "status-fail";
+}
+
+function drawGrid() {
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    // Vertical lines
+    for(let x=-20; x<60; x+=6) {
+        const p1 = toCanvas(x, -10);
+        const p2 = toCanvas(x, 50);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+    }
+    // Horizontal lines
+    for(let y=-10; y<50; y+=6) {
+        const p1 = toCanvas(-20, y);
+        const p2 = toCanvas(60, y);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+    }
+    ctx.stroke();
+}
+
+function drawEnvironment() {
+    ctx.lineCap = 'round';
+
+    // 1. Walls
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    // Left Wall (0,0 to 0,11)
+    let p1 = toCanvas(0, 11);
+    let p2 = toCanvas(0, 0);
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    // Back Wall (0,0 to 50,0) - arbitrarily long
+    let p3 = toCanvas(50, 0);
+    ctx.lineTo(p3.x, p3.y);
+    ctx.stroke();
+
+    // 2. Desk (0,0 to 29,20)
+    ctx.fillStyle = '#2c2c2c';
+    ctx.beginPath();
+    p1 = toCanvas(0, 0);
+    p2 = toCanvas(GEO.deskWidth, 0);
+    p3 = toCanvas(GEO.deskWidth, GEO.deskDepth);
+    let p4 = toCanvas(0, GEO.deskDepth);
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.lineTo(p3.x, p3.y);
+    ctx.lineTo(p4.x, p4.y);
+    ctx.fill();
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 3. Central Mirror (Fixed)
+    // Starts at X = GEO.mirrorGap (7), Width = GEO.mirrorWidth (23)
+    const cmStart = GEO.mirrorGap;
+    const cmEnd = cmStart + GEO.mirrorWidth;
+    
+    ctx.strokeStyle = '#aaf'; // Mirror glass color
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    p1 = toCanvas(cmStart, 0.5); // Slightly off wall for viz
+    p2 = toCanvas(cmEnd, 0.5);
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+
+    // 4. Side Mirrors (Pivoting)
+    drawPivotMirror(state.lm, "L");
+    drawPivotMirror(state.rm, "R");
+}
+
+function drawPivotMirror(m, label) {
+    // Calculate endpoints based on center (x,y) and Yaw
+    const rad = m.yaw * (Math.PI / 180);
+    const dx = (m.w / 2) * Math.cos(rad);
+    const dy = (m.w / 2) * Math.sin(rad);
+
+    const x1 = m.x - dx;
+    const y1 = m.y - dy;
+    const x2 = m.x + dx;
+    const y2 = m.y + dy;
+
+    const p1 = toCanvas(x1, y1);
+    const p2 = toCanvas(x2, y2);
+    const pc = toCanvas(m.x, m.y);
+
+    // Draw Mirror Surface
+    ctx.strokeStyle = '#aaf';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+
+    // Draw Backing/Mount indication
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    // Small pivot circle
+    ctx.arc(pc.x, pc.y, 3, 0, Math.PI*2);
+    ctx.stroke();
+    
+    // Label
+    ctx.fillStyle = '#aaa';
+    ctx.font = '10px monospace';
+    ctx.fillText(label, pc.x + 5, pc.y - 5);
+}
+
+function drawHead() {
+    const h = state.head;
+    const c = toCanvas(h.x, h.y);
+    
+    // Head Oval
+    ctx.fillStyle = '#3a2e2a';
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, (h.width/2)*SCALE, (h.depth/2)*SCALE, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Eyes (Small dots)
+    ctx.fillStyle = '#fff';
+    const halfEyeDist = h.eyeSpacing / 2;
+    const eyeY = h.y - (h.depth/2) + 1; // Eyes are near front of face
+    const eyeLeft = toCanvas(h.x - halfEyeDist, eyeY);
+    const eyeRight = toCanvas(h.x + halfEyeDist, eyeY);
+
+    ctx.beginPath(); ctx.arc(eyeLeft.x, eyeLeft.y, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(eyeRight.x, eyeRight.y, 2, 0, Math.PI*2); ctx.fill();
+
+    // Back of Head Target Arc (Visual indicator)
+    ctx.strokeStyle = 'rgba(255, 100, 100, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    // Draw arc for back of head
+    // Ellipse doesn't support easy partial arc in canvas path easily with rotation, 
+    // but head is axis aligned.
+    // Start from Right side, go around back to Left side.
+    ctx.ellipse(c.x, c.y, (h.width/2)*SCALE, (h.depth/2)*SCALE, 0, 0, Math.PI, false); 
+    ctx.stroke();
+}
+
+/**
+ * Math & Ray Tracing
+ */
+
+// Basic Vector Math
+function vecSub(v1, v2) { return { x: v1.x - v2.x, y: v1.y - v2.y }; }
+function vecAdd(v1, v2) { return { x: v1.x + v2.x, y: v1.y + v2.y }; }
+function vecLen(v) { return Math.sqrt(v.x*v.x + v.y*v.y); }
+function vecNorm(v) { const l = vecLen(v); return l ? { x: v.x/l, y: v.y/l } : {x:0,y:0}; }
+function dot(v1, v2) { return v1.x*v2.x + v1.y*v2.y; }
+
+// Line Intersection
+function getIntersection(p1, p2, p3, p4) {
+    const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (d === 0) return null;
+    const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
+    const u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / d;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+        return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
+    }
+    return null;
+}
+
+// Ray Casting Logic
+function traceMirrorSystem(sideMirror, label) {
+    const h = state.head;
+    const eyeY = h.y - (h.depth/2) + 1;
+    // Test from Center Eye (simplify)
+    const eyePos = { x: h.x, y: eyeY };
+    
+    // Define Central Mirror Segment
+    const cmStart = { x: GEO.mirrorGap, y: 0 };
+    const cmEnd = { x: GEO.mirrorGap + GEO.mirrorWidth, y: 0 };
+
+    // Define Side Mirror Segment
+    const rad = sideMirror.yaw * (Math.PI / 180);
+    const dx = (sideMirror.w / 2) * Math.cos(rad);
+    const dy = (sideMirror.w / 2) * Math.sin(rad);
+    const smStart = { x: sideMirror.x - dx, y: sideMirror.y - dy };
+    const smEnd = { x: sideMirror.x + dx, y: sideMirror.y + dy };
+    // Side Mirror Normal (2D) - perpendicular to direction
+    // Direction vector: (2*dx, 2*dy)
+    // Normal: (-dy, dx) normalized
+    let smNormal = vecNorm({ x: -dy, y: dx });
+
+    // Cast multiple rays from eye to side mirror surface to check coverage
+    const raysToCast = 5;
+    let hitCount = 0;
+
+    for (let i = 0; i <= raysToCast; i++) {
+        const t = i / raysToCast;
+        const targetX = smStart.x + (smEnd.x - smStart.x) * t;
+        const targetY = smStart.y + (smEnd.y - smStart.y) * t;
+        const targetOnSM = { x: targetX, y: targetY };
+
+        // 1. Ray: Eye -> Side Mirror
+        // Check collision with walls? (Simplified: Check if LOS is blocked by Head itself?)
+        // Let's assume clear LOS to side mirror for now.
+        
+        // Calculate Reflection Vector at Side Mirror
+        // I = Target - Eye
+        const incident = vecSub(targetOnSM, eyePos);
+        const incLen = vecLen(incident);
+        const I = vecNorm(incident);
+        
+        // Ensure Normal faces the eye. If dot(I, N) > 0, flip N
+        let N = smNormal;
+        if (dot(I, N) > 0) N = { x: -N.x, y: -N.y };
+
+        // R = I - 2*(I.N)*N
+        const dotIN = dot(I, N);
+        const R = { x: I.x - 2*dotIN*N.x, y: I.y - 2*dotIN*N.y };
+
+        // 2. Trace R from Side Mirror -> Central Mirror
+        // We need a far point to check intersection
+        const farPoint = { x: targetOnSM.x + R.x * 100, y: targetOnSM.y + R.y * 100 };
+        const hitCM = getIntersection(targetOnSM, farPoint, cmStart, cmEnd);
+
+        let success = false;
+        let p3 = farPoint; // Visual endpoint default
+
+        if (hitCM) {
+            // Hit Central Mirror
+            // 3. Reflect off Central Mirror
+            // CM Normal is (0, 1) or (0, -1). Since it's on Y=0 and rays come from Y>0, N is (0, 1).
+            const cmNormal = { x: 0, y: 1 };
+            // New Incident I2 = R
+            const I2 = R;
+            const dotI2N = dot(I2, cmNormal);
+            const R2 = { x: I2.x - 2*dotI2N*cmNormal.x, y: I2.y - 2*dotI2N*cmNormal.y };
+
+            // 4. Trace R2 towards Head
+            // Check intersection with "Back of Head" area.
+            // Simplified: Define Back of Head as a line segment or box behind the eye line.
+            // Head Box: 
+            const headBackY = h.y + h.depth/2;
+            const headFrontY = h.y - h.depth/2; // Actually eye is here
+            // Let's define the "Target" as the rear half of the head.
+            // Checking intersection with a bounding box around the rear half.
+            // Box: x [h.x - w/2, h.x + w/2], y [h.y, h.y + d/2]
+            
+            // To simplify math, let's just check if the ray passes through the circle of the head
+            // and enters from the back (Y > h.y).
+            
+            // Ray Circle Intersection
+            // Ray origin: hitCM, Direction: R2
+            // Circle Center: h.x, h.y. Radius: h.width/2.
+            
+            // t calculation for ray-sphere intersection
+            const L = { x: h.x - hitCM.x, y: h.y - hitCM.y };
+            const tca = dot(L, R2);
+            if (tca > 0) { // Moving towards head
+                const d2 = dot(L, L) - tca*tca;
+                const radius2 = (h.width/2)**2;
+                if (d2 <= radius2) {
+                    // Hit the head cylinder
+                    // Now check Height (Z) Logic
+                    // Total distance traveled
+                    const d1 = vecLen(vecSub(targetOnSM, eyePos));
+                    const d2_seg = vecLen(vecSub(hitCM, targetOnSM));
+                    const d3 = Math.sqrt(dot(L,L)); // Approx distance to head center
+                    const totalDist = d1 + d2_seg + d3;
+
+                    // Pitch calculation
+                    // Eye Z
+                    // Delta Z per inch = tan(pitch_total). 
+                    // Mirror Pitch affects the vertical angle.
+                    // Simple Model:
+                    // Ray starts at EyeZ.
+                    // Side Mirror Pitch (theta).
+                    // Reflected ray slope change: delta_angle = 2 * theta.
+                    // If mirror tilts UP (positive pitch), ray goes UP.
+                    
+                    const pitchRad = sideMirror.pitch * (Math.PI/180);
+                    // Z change = distance * tan(2 * pitch)
+                    // Note: This is an approximation. Real 3D vector math is complex for one file.
+                    // We check if the ray height at the back of the head is within "Head Height" bounds.
+                    // Let's assume Head is a cylinder from Z=EyeZ-4 to Z=EyeZ+4.
+                    
+                    const zDelta = totalDist * Math.tan(2 * pitchRad);
+                    const hitZ = h.eyeZ + zDelta;
+                    
+                    // Check if hitZ is on the head (approx range 40-50 inches)
+                    // Also check if hitZ hits the mirrors? 
+                    // Assume mirrors are tall enough for now (22" is quite tall).
+                    
+                    if (Math.abs(hitZ - h.eyeZ) < 6) { // Tolerance for seeing back of head
+                        success = true;
+                        p3 = { x: hitCM.x + R2.x * 20, y: hitCM.y + R2.y * 20 }; // Visual extend
+                    }
+                }
+            }
+        }
+
+        // Draw Ray
+        ctx.strokeStyle = success ? '#0f0' : 'rgba(255, 50, 50, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // Segment 1
+        const cv1 = toCanvas(eyePos.x, eyePos.y);
+        const cv2 = toCanvas(targetOnSM.x, targetOnSM.y);
+        ctx.moveTo(cv1.x, cv1.y);
+        ctx.lineTo(cv2.x, cv2.y);
+        // Segment 2
+        if (hitCM) {
+            const cv3 = toCanvas(hitCM.x, hitCM.y);
+            ctx.lineTo(cv3.x, cv3.y);
+            // Segment 3 (Reflection off Center)
+            const cv4 = toCanvas(p3.x, p3.y);
+            ctx.lineTo(cv4.x, cv4.y);
+        } else {
+            // Missed center mirror
+            const cv3 = toCanvas(p3.x, p3.y);
+            ctx.lineTo(cv3.x, cv3.y);
+        }
+        ctx.stroke();
+
+        if (success) hitCount++;
+    }
+
+    return hitCount > 0;
+}
+
+// Start
+init();
+
+</script>
+</body>
+</html>

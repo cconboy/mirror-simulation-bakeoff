@@ -1,0 +1,1395 @@
+<!--
+Three-Mirror Makeup/Hair Station Simulator (Single-file HTML)
+- What it does: Simulates (top-down) whether your eye can see the “back of head” target region via two reflections:
+  Eye → Side Mirror → Central Mirror → Target  (and optionally the reverse order).
+- How to use:
+  1) Drag sliders / edit numbers for mirror positions and yaw angles.
+  2) Watch PASS/FAIL and Coverage update live.
+  3) Green rays = valid reflected paths that hit within mirror surfaces and are not blocked by walls.
+  4) Red rays = failed paths (miss mirrors or blocked).
+- Notes:
+  - This is an ideal planar-reflection model in 2D (plan view). Pitch/vertical is not modeled here.
+  - Units are inches. Coordinate system: x to the right along the back wall, y outward from the back wall.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Three-Mirror Reflection Simulator (Top-Down)</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #101827;
+      --panel2: #0f1624;
+      --text: #e7eefc;
+      --muted: #a8b3c8;
+      --accent: #6aa9ff;
+      --bad: #ff6a6a;
+      --good: #5dff9a;
+      --line: rgba(255,255,255,0.12);
+      --shadow: rgba(0,0,0,0.35);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 20% 20%, #13223e 0%, var(--bg) 55%) fixed;
+    }
+
+    header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(10px);
+      z-index: 10;
+    }
+
+    header .row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      font-size: 16px;
+      margin: 0;
+      letter-spacing: 0.2px;
+      font-weight: 650;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-family: var(--mono);
+    }
+
+    .pill {
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 24px var(--shadow);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pill strong {
+      font-family: var(--mono);
+      font-weight: 800;
+      letter-spacing: 0.6px;
+    }
+
+    .pill.pass { border-color: rgba(93,255,154,0.35); background: rgba(93,255,154,0.08); }
+    .pill.fail { border-color: rgba(255,106,106,0.35); background: rgba(255,106,106,0.08); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 18px 50px var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel .panel-header {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(0,0,0,0.18);
+    }
+
+    .panel .panel-header h2 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      color: var(--text);
+      text-transform: uppercase;
+      opacity: 0.95;
+    }
+
+    .panel .panel-body {
+      padding: 12px 14px 14px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 650;
+      letter-spacing: 0.2px;
+      box-shadow: 0 10px 20px var(--shadow);
+      transition: transform 0.06s ease, background 0.15s ease;
+    }
+    button:hover { background: rgba(255,255,255,0.09); }
+    button:active { transform: translateY(1px); }
+
+    .toggle {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+      user-select: none;
+      cursor: pointer;
+      font-weight: 650;
+      color: var(--text);
+    }
+    .toggle input { transform: scale(1.1); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+
+    .group {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: rgba(0,0,0,0.16);
+    }
+    .group h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 750;
+    }
+
+    .control {
+      display: grid;
+      grid-template-columns: 1fr 90px;
+      gap: 10px;
+      align-items: center;
+      margin: 10px 0;
+    }
+
+    .control label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .control .inputs {
+      display: grid;
+      grid-template-columns: 1fr 90px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .control input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .control input[type="number"] {
+      width: 90px;
+      padding: 8px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-family: var(--mono);
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      margin: 10px 0 0;
+    }
+
+    .canvas-wrap {
+      padding: 12px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 70vh;
+      min-height: 520px;
+      display: block;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(0,0,0,0.20));
+      box-shadow: 0 18px 60px var(--shadow);
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      align-items: center;
+    }
+    .swatch {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      padding: 6px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.25) inset;
+    }
+
+    .advanced {
+      display: none;
+      margin-top: 10px;
+    }
+    .advanced.show { display: block; }
+
+    .small {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--line);
+      margin: 10px 0;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="row">
+    <h1>Three-Mirror Reflection Simulator (Top-Down, Inches)</h1>
+    <div class="status">
+      <span id="statusPill" class="pill">
+        <strong id="passFail">…</strong>
+        <span id="coverageText">Coverage: …</span>
+      </span>
+      <span class="pill"><span class="small" id="pathModeText">Path: …</span></span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Controls</h2>
+      <div class="btn-row">
+        <button id="resetBtn" title="Reset everything to defaults">Reset to defaults</button>
+        <label class="toggle" title="Show advanced controls (eye/head/region sampling)">
+          <input id="advancedToggle" type="checkbox" />
+          Advanced
+        </label>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="grid">
+
+        <div class="group">
+          <h3>Station geometry</h3>
+
+          <div class="control">
+            <div>
+              <label>Back wall length (in)</label>
+              <div class="inputs">
+                <input id="backWallLen_r" type="range" min="40" max="120" step="1" />
+                <input id="backWallLen_n" type="number" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Short wall length (in) (perpendicular, at x=0)</label>
+              <div class="inputs">
+                <input id="shortWallLen_r" type="range" min="0" max="36" step="0.5" />
+                <input id="shortWallLen_n" type="number" step="0.5" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="control">
+            <div>
+              <label>Central mirror left edge x (in)</label>
+              <div class="inputs">
+                <input id="centralLeft_r" type="range" min="0" max="60" step="0.25" />
+                <input id="centralLeft_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Central mirror width (in)</label>
+              <div class="inputs">
+                <input id="centralW_r" type="range" min="10" max="40" step="0.25" />
+                <input id="centralW_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="control">
+            <div>
+              <label>Desk width (in) (x direction)</label>
+              <div class="inputs">
+                <input id="deskW_r" type="range" min="18" max="48" step="0.5" />
+                <input id="deskW_n" type="number" step="0.5" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Desk depth (in) (y direction)</label>
+              <div class="inputs">
+                <input id="deskD_r" type="range" min="12" max="36" step="0.5" />
+                <input id="deskD_n" type="number" step="0.5" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Desk left edge x (in)</label>
+              <div class="inputs">
+                <input id="deskX_r" type="range" min="0" max="60" step="0.25" />
+                <input id="deskX_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <p class="hint">
+            Defaults reflect your notes: central mirror width 23 in on the back wall (y=0),
+            short wall at x=0 extending 11 in outward, and the central mirror left edge 7 in from the short wall.
+          </p>
+        </div>
+
+        <div class="group">
+          <h3>Ray path mode</h3>
+
+          <div class="control">
+            <div>
+              <label>Reflection order</label>
+              <div class="inputs">
+                <input id="pathMode_r" type="range" min="0" max="2" step="1" />
+                <input id="pathMode_n" type="number" min="0" max="2" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <p class="hint">
+            0 = Eye → Side → Central → Target (recommended)<br />
+            1 = Eye → Central → Side → Target<br />
+            2 = Both orders (a target point counts if either works)
+          </p>
+
+          <div class="divider"></div>
+
+          <div class="control">
+            <div>
+              <label>Targets sampled on back-of-head arc (count)</label>
+              <div class="inputs">
+                <input id="targetCount_r" type="range" min="3" max="41" step="2" />
+                <input id="targetCount_n" type="number" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Back-of-head arc width (degrees)</label>
+              <div class="inputs">
+                <input id="arcDeg_r" type="range" min="10" max="160" step="1" />
+                <input id="arcDeg_n" type="number" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <p class="hint">
+            Coverage is the fraction of sampled arc points that are visible via at least one valid reflected path.
+            PASS means coverage ≥ the threshold.
+          </p>
+
+          <div class="control">
+            <div>
+              <label>PASS threshold (coverage %)</label>
+              <div class="inputs">
+                <input id="passThresh_r" type="range" min="0" max="100" step="1" />
+                <input id="passThresh_n" type="number" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+        </div>
+
+        <div class="group">
+          <h3>Left side mirror (pivot wall mirror)</h3>
+
+          <div class="control">
+            <div>
+              <label>Mount x (in)</label>
+              <div class="inputs">
+                <input id="Lx_r" type="range" min="-10" max="60" step="0.25" />
+                <input id="Lx_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Mount y (in)</label>
+              <div class="inputs">
+                <input id="Ly_r" type="range" min="-2" max="40" step="0.25" />
+                <input id="Ly_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Reflective width (in)</label>
+              <div class="inputs">
+                <input id="Lw_r" type="range" min="6" max="30" step="0.25" />
+                <input id="Lw_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Yaw angle (deg) (0 = facing +y)</label>
+              <div class="inputs">
+                <input id="Lyaw_r" type="range" min="-90" max="90" step="1" />
+                <input id="Lyaw_n" type="number" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <p class="hint">
+            The mirror is a line segment centered at (x,y) with direction set by yaw.
+            Yaw=0 means the mirror plane is vertical in x (segment runs left-right), facing outward (+y).
+          </p>
+        </div>
+
+        <div class="group">
+          <h3>Right side mirror (pivot mirror on open side)</h3>
+
+          <div class="control">
+            <div>
+              <label>Mount x (in)</label>
+              <div class="inputs">
+                <input id="Rx_r" type="range" min="-10" max="80" step="0.25" />
+                <input id="Rx_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Mount y (in)</label>
+              <div class="inputs">
+                <input id="Ry_r" type="range" min="-2" max="50" step="0.25" />
+                <input id="Ry_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Reflective width (in)</label>
+              <div class="inputs">
+                <input id="Rw_r" type="range" min="6" max="30" step="0.25" />
+                <input id="Rw_n" type="number" step="0.25" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="control">
+            <div>
+              <label>Yaw angle (deg) (0 = facing +y)</label>
+              <div class="inputs">
+                <input id="Ryaw_r" type="range" min="-90" max="90" step="1" />
+                <input id="Ryaw_n" type="number" step="1" />
+              </div>
+            </div>
+            <div></div>
+          </div>
+
+          <p class="hint">
+            This side is “open” in your description, so the mirror can be placed freely.
+            If you later add a wall here, you can simulate it by adding another blocking segment in code.
+          </p>
+        </div>
+      </div>
+
+      <div class="advanced" id="advancedSection">
+        <div class="divider"></div>
+        <div class="grid">
+          <div class="group">
+            <h3>User geometry (top-down)</h3>
+
+            <div class="control">
+              <div>
+                <label>Head center x (in)</label>
+                <div class="inputs">
+                  <input id="Hx_r" type="range" min="-10" max="80" step="0.25" />
+                  <input id="Hx_n" type="number" step="0.25" />
+                </div>
+              </div>
+              <div></div>
+            </div>
+
+            <div class="control">
+              <div>
+                <label>Head center y (in)</label>
+                <div class="inputs">
+                  <input id="Hy_r" type="range" min="2" max="60" step="0.25" />
+                  <input id="Hy_n" type="number" step="0.25" />
+                </div>
+              </div>
+              <div></div>
+            </div>
+
+            <div class="control">
+              <div>
+                <label>Head radius (in)</label>
+                <div class="inputs">
+                  <input id="Hr_r" type="range" min="3" max="7" step="0.1" />
+                  <input id="Hr_n" type="number" step="0.1" />
+                </div>
+              </div>
+              <div></div>
+            </div>
+
+            <div class="control">
+              <div>
+                <label>Eye offset forward (in) (toward mirror, -y)</label>
+                <div class="inputs">
+                  <input id="EyeOff_r" type="range" min="0" max="4" step="0.1" />
+                  <input id="EyeOff_n" type="number" step="0.1" />
+                </div>
+              </div>
+              <div></div>
+            </div>
+
+            <p class="hint">
+              Facing direction is toward the back wall (negative y). The “back of head” region is on the +y side of the head circle.
+            </p>
+          </div>
+
+          <div class="group">
+            <h3>Visibility / rendering</h3>
+
+            <div class="control">
+              <div>
+                <label>Show only a few rays (for clarity)</label>
+                <div class="inputs">
+                  <input id="rayLimit_r" type="range" min="0" max="25" step="1" />
+                  <input id="rayLimit_n" type="number" step="1" />
+                </div>
+              </div>
+              <div></div>
+            </div>
+
+            <div class="control">
+              <div>
+                <label>Wall blocking tolerance (in)</label>
+                <div class="inputs">
+                  <input id="eps_r" type="range" min="0.001" max="0.25" step="0.001" />
+                  <input id="eps_n" type="number" step="0.001" />
+                </div>
+              </div>
+              <div></div>
+            </div>
+
+            <p class="hint">
+              Tolerance helps avoid counting “touching endpoints” as blocked. If you see flicker, increase slightly.
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Diagram</h2>
+      <div class="btn-row">
+        <span class="pill"><span class="small">Top-down plan view, ideal mirrors</span></span>
+      </div>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="c"></canvas>
+      <div class="legend">
+        <span class="swatch"><span class="dot" style="background: var(--good)"></span>working ray</span>
+        <span class="swatch"><span class="dot" style="background: var(--bad)"></span>failed ray</span>
+        <span class="swatch"><span class="dot" style="background: rgba(255,255,255,0.85)"></span>walls</span>
+        <span class="swatch"><span class="dot" style="background: rgba(106,169,255,0.9)"></span>mirrors</span>
+        <span class="swatch"><span class="dot" style="background: rgba(255,255,255,0.35)"></span>desk</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // -----------------------------
+  // Geometry utilities (2D)
+  // -----------------------------
+  const V = (x, y) => ({ x, y });
+  const add = (a,b) => V(a.x+b.x, a.y+b.y);
+  const sub = (a,b) => V(a.x-b.x, a.y-b.y);
+  const mul = (a,s) => V(a.x*s, a.y*s);
+  const dot = (a,b) => a.x*b.x + a.y*b.y;
+  const cross = (a,b) => a.x*b.y - a.y*b.x;
+  const len = (a) => Math.hypot(a.x, a.y);
+  const norm = (a) => {
+    const l = len(a);
+    return l > 1e-12 ? V(a.x/l, a.y/l) : V(0,0);
+  };
+  const rot = (a, rad) => V(a.x*Math.cos(rad)-a.y*Math.sin(rad), a.x*Math.sin(rad)+a.y*Math.cos(rad));
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const deg2rad = (d) => d * Math.PI / 180;
+
+  // Segment intersection helpers
+  function segmentIntersect(p, p2, q, q2, eps = 1e-9) {
+    // Returns {hit, t, u, pt} for p + t*(p2-p), q + u*(q2-q) with t,u in [0,1]
+    const r = sub(p2, p);
+    const s = sub(q2, q);
+    const rxs = cross(r, s);
+    const q_p = sub(q, p);
+    const qpxr = cross(q_p, r);
+
+    if (Math.abs(rxs) < eps && Math.abs(qpxr) < eps) {
+      // Colinear: treat as no hit for blocking (too ambiguous for this sim)
+      return { hit: false };
+    }
+    if (Math.abs(rxs) < eps && Math.abs(qpxr) >= eps) return { hit: false };
+
+    const t = cross(q_p, s) / rxs;
+    const u = cross(q_p, r) / rxs;
+
+    if (t >= -eps && t <= 1+eps && u >= -eps && u <= 1+eps) {
+      const pt = add(p, mul(r, t));
+      return { hit: true, t, u, pt };
+    }
+    return { hit: false };
+  }
+
+  function lineSegmentIntersection(lineP, lineDir, segA, segB, eps = 1e-9) {
+    // Solve lineP + t*lineDir intersects segment segA + u*(segB-segA)
+    const r = lineDir;
+    const s = sub(segB, segA);
+    const rxs = cross(r, s);
+    const q_p = sub(segA, lineP);
+    if (Math.abs(rxs) < eps) return { hit: false };
+    const t = cross(q_p, s) / rxs;
+    const u = cross(q_p, r) / rxs;
+    if (u >= -eps && u <= 1+eps) {
+      const pt = add(lineP, mul(r, t));
+      return { hit: true, t, u, pt };
+    }
+    return { hit: false };
+  }
+
+  // Reflect a point across an infinite line defined by two points A,B
+  // Law-of-reflection via "mirror as line": reflect point by projecting onto line and mirroring the perpendicular component.
+  function reflectPointAcrossLine(P, A, B) {
+    const AB = sub(B, A);
+    const u = norm(AB);
+    const AP = sub(P, A);
+    const proj = mul(u, dot(AP, u));
+    const perp = sub(AP, proj);
+    // Reflected: A + proj - perp
+    return add(A, sub(proj, perp));
+  }
+
+  // -----------------------------
+  // Model
+  // -----------------------------
+  const defaults = {
+    // Station:
+    backWallLen: 60,
+    shortWallLen: 11,
+
+    centralLeft: 7,
+    centralW: 23,
+
+    deskW: 29,
+    deskD: 20,
+    deskX: 4, // chosen to roughly align under central mirror
+
+    // Path mode:
+    pathMode: 2, // both
+    targetCount: 21,
+    arcDeg: 70,
+    passThresh: 40,
+
+    // Left mirror (Pivot-N-View-ish):
+    Lx: 0,     // on short wall by default
+    Ly: 6,
+    Lw: 14,    // reflective width (plan view uses width only)
+    Lyaw: 35,
+
+    // Right mirror:
+    Rx: 39,
+    Ry: 8,
+    Rw: 14,
+    Ryaw: -35,
+
+    // User:
+    Hx: 18.5,
+    Hy: 18,
+    Hr: 4.5,
+    eyeOff: 1.2,
+
+    // Render:
+    rayLimit: 10,  // 0 = show all
+    eps: 0.03
+  };
+
+  const state = structuredClone(defaults);
+
+  // -----------------------------
+  // UI wiring
+  // -----------------------------
+  const ui = {};
+  function linkControl(id, key, { min=null, max=null, step=null } = {}) {
+    const r = document.getElementById(id + "_r");
+    const n = document.getElementById(id + "_n");
+    ui[key] = { r, n };
+
+    if (min !== null) { r.min = min; n.min = min; }
+    if (max !== null) { r.max = max; n.max = max; }
+    if (step !== null) { r.step = step; n.step = step; }
+
+    function setVal(v) {
+      if (!Number.isFinite(v)) return;
+      if (min !== null) v = clamp(v, Number(min), Number(max));
+      state[key] = v;
+      r.value = v;
+      n.value = v;
+      update();
+    }
+
+    r.addEventListener("input", () => setVal(parseFloat(r.value)));
+    n.addEventListener("input", () => setVal(parseFloat(n.value)));
+
+    // init
+    r.value = state[key];
+    n.value = state[key];
+  }
+
+  // Station
+  linkControl("backWallLen", "backWallLen", { min: 40, max: 120, step: 1 });
+  linkControl("shortWallLen", "shortWallLen", { min: 0, max: 36, step: 0.5 });
+  linkControl("centralLeft", "centralLeft", { min: 0, max: 60, step: 0.25 });
+  linkControl("centralW", "centralW", { min: 10, max: 40, step: 0.25 });
+  linkControl("deskW", "deskW", { min: 18, max: 48, step: 0.5 });
+  linkControl("deskD", "deskD", { min: 12, max: 36, step: 0.5 });
+  linkControl("deskX", "deskX", { min: 0, max: 60, step: 0.25 });
+
+  // Path
+  linkControl("pathMode", "pathMode", { min: 0, max: 2, step: 1 });
+  linkControl("targetCount", "targetCount", { min: 3, max: 41, step: 2 });
+  linkControl("arcDeg", "arcDeg", { min: 10, max: 160, step: 1 });
+  linkControl("passThresh", "passThresh", { min: 0, max: 100, step: 1 });
+
+  // Left mirror
+  linkControl("Lx", "Lx", { min: -10, max: 60, step: 0.25 });
+  linkControl("Ly", "Ly", { min: -2, max: 40, step: 0.25 });
+  linkControl("Lw", "Lw", { min: 6, max: 30, step: 0.25 });
+  linkControl("Lyaw", "Lyaw", { min: -90, max: 90, step: 1 });
+
+  // Right mirror
+  linkControl("Rx", "Rx", { min: -10, max: 80, step: 0.25 });
+  linkControl("Ry", "Ry", { min: -2, max: 50, step: 0.25 });
+  linkControl("Rw", "Rw", { min: 6, max: 30, step: 0.25 });
+  linkControl("Ryaw", "Ryaw", { min: -90, max: 90, step: 1 });
+
+  // Advanced
+  linkControl("Hx", "Hx", { min: -10, max: 80, step: 0.25 });
+  linkControl("Hy", "Hy", { min: 2, max: 60, step: 0.25 });
+  linkControl("Hr", "Hr", { min: 3, max: 7, step: 0.1 });
+  linkControl("EyeOff", "eyeOff", { min: 0, max: 4, step: 0.1 });
+  linkControl("rayLimit", "rayLimit", { min: 0, max: 25, step: 1 });
+  linkControl("eps", "eps", { min: 0.001, max: 0.25, step: 0.001 });
+
+  const advancedToggle = document.getElementById("advancedToggle");
+  const advancedSection = document.getElementById("advancedSection");
+  advancedToggle.addEventListener("change", () => {
+    advancedSection.classList.toggle("show", advancedToggle.checked);
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    Object.assign(state, structuredClone(defaults));
+    // push to UI
+    for (const [k, {r,n}] of Object.entries(ui)) {
+      r.value = state[k];
+      n.value = state[k];
+    }
+    update();
+  });
+
+  const statusPill = document.getElementById("statusPill");
+  const passFailEl = document.getElementById("passFail");
+  const coverageEl = document.getElementById("coverageText");
+  const pathModeText = document.getElementById("pathModeText");
+
+  // -----------------------------
+  // Scene construction
+  // -----------------------------
+  function getCentralMirrorSegment() {
+    const x0 = state.centralLeft;
+    const x1 = state.centralLeft + state.centralW;
+    return { a: V(x0, 0), b: V(x1, 0) };
+  }
+
+  function getWallSegments() {
+    const eps = state.eps;
+
+    // Back wall is y=0 from x=0..backWallLen, but the central mirror is a "gap" (not blocking)
+    const backLen = state.backWallLen;
+    const cm = getCentralMirrorSegment();
+    const cmL = cm.a.x;
+    const cmR = cm.b.x;
+
+    const walls = [];
+
+    // Left back wall segment
+    if (cmL > 0 + eps) walls.push({ a: V(0, 0), b: V(cmL, 0), kind: "wall" });
+    // Right back wall segment
+    if (backLen > cmR + eps) walls.push({ a: V(cmR, 0), b: V(backLen, 0), kind: "wall" });
+
+    // Short wall at x=0 from y=0..shortWallLen
+    if (state.shortWallLen > eps) walls.push({ a: V(0, 0), b: V(0, state.shortWallLen), kind: "wall" });
+
+    return walls;
+  }
+
+  function makeMirrorSegment(center, width, yawDeg) {
+    // In plan-view, mirror is a line segment. "Yaw" rotates the mirror plane around vertical axis.
+    // We define yaw=0 as mirror facing +y, so the segment runs along x (left-right).
+    // Segment direction (tangent) is rotated from +x by yaw.
+    const t = rot(V(1, 0), deg2rad(yawDeg));
+    const half = width / 2;
+    const a = add(center, mul(t, -half));
+    const b = add(center, mul(t, +half));
+    return { a, b, center, width, yawDeg, kind: "sideMirror" };
+  }
+
+  function getSideMirrors() {
+    const L = makeMirrorSegment(V(state.Lx, state.Ly), state.Lw, state.Lyaw);
+    const R = makeMirrorSegment(V(state.Rx, state.Ry), state.Rw, state.Ryaw);
+    L.name = "L"; R.name = "R";
+    return [L, R];
+  }
+
+  function getDeskRect() {
+    return {
+      x: state.deskX,
+      y: 0,
+      w: state.deskW,
+      h: state.deskD
+    };
+  }
+
+  function getHeadAndEye() {
+    const head = { c: V(state.Hx, state.Hy), r: state.Hr };
+    const eye = V(state.Hx, state.Hy - state.eyeOff);
+    return { head, eye };
+  }
+
+  function getTargetPoints() {
+    const { head } = getHeadAndEye();
+    const N = Math.max(3, Math.floor(state.targetCount));
+    const arc = deg2rad(state.arcDeg);
+    // Facing direction is toward -y, so "back" is toward +y.
+    // We'll param around the +y axis: theta=0 gives +y, theta positive rotates toward +x.
+    // Sample from -arc/2 .. +arc/2
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const t = (N === 1) ? 0 : i / (N - 1);
+      const theta = (t - 0.5) * arc;
+      const dir = V(Math.sin(theta), Math.cos(theta)); // theta=0 => (0, +1)
+      pts.push(add(head.c, mul(dir, head.r)));
+    }
+    return pts;
+  }
+
+  // -----------------------------
+  // Blocking checks
+  // -----------------------------
+  function segmentBlockedByWalls(A, B, walls, eps) {
+    // True if segment AB intersects any wall segment (excluding very near endpoints to reduce false blocks)
+    for (const w of walls) {
+      const hit = segmentIntersect(A, B, w.a, w.b, 1e-12);
+      if (!hit.hit) continue;
+
+      // Exclude intersections extremely near A or B (allow touching at intended reflection endpoints)
+      const t = hit.t;
+      if (t > eps && t < 1 - eps) return true;
+    }
+    return false;
+  }
+
+  // Check if a point lies on a segment (with tolerance)
+  function pointOnSegment(P, A, B, tol = 1e-6) {
+    const AB = sub(B, A);
+    const AP = sub(P, A);
+    const t = dot(AP, AB) / Math.max(1e-12, dot(AB, AB));
+    if (t < -tol || t > 1 + tol) return false;
+    const closest = add(A, mul(AB, t));
+    return len(sub(P, closest)) <= tol;
+  }
+
+  // Intersect an infinite line with a segment (returns point if within segment bounds)
+  function intersectLineWithSegment(lineP, lineDir, segA, segB, eps = 1e-9) {
+    const res = lineSegmentIntersection(lineP, lineDir, segA, segB, eps);
+    if (!res.hit) return null;
+    return res.pt;
+  }
+
+  // -----------------------------
+  // Reflection path tests (2-reflection using method of images)
+  // -----------------------------
+  function tryPath_Eye_Side_Central_Target(eye, sideSeg, centralSeg, target, walls, eps) {
+    // Order: Eye -> Side -> Central -> Target
+    // Method:
+    // 1) Reflect Target across the CENTRAL mirror line to get T1.
+    // 2) Reflect T1 across the SIDE mirror line to get T2.
+    // 3) Line from Eye to T2 intersects side segment at P1.
+    // 4) Line from P1 to T1 intersects central segment at P2.
+    // 5) Validate that segments are not blocked by walls, and intersections lie on mirror segments.
+
+    const T1 = reflectPointAcrossLine(target, centralSeg.a, centralSeg.b);
+    const T2 = reflectPointAcrossLine(T1, sideSeg.a, sideSeg.b);
+
+    const dirE = sub(T2, eye);
+    if (len(dirE) < 1e-9) return { ok: false };
+
+    const P1 = intersectLineWithSegment(eye, dirE, sideSeg.a, sideSeg.b, 1e-9);
+    if (!P1) return { ok: false, reason: "miss side" };
+
+    const dir1 = sub(T1, P1);
+    if (len(dir1) < 1e-9) return { ok: false };
+
+    const P2 = intersectLineWithSegment(P1, dir1, centralSeg.a, centralSeg.b, 1e-9);
+    if (!P2) return { ok: false, reason: "miss central" };
+
+    // Blocking: allow wall-touch at P2 since central is a gap; other walls still block interior intersections.
+    // Build segments:
+    const s1 = { a: eye, b: P1 };
+    const s2 = { a: P1, b: P2 };
+    const s3 = { a: P2, b: target };
+
+    // Check for wall blocking along each segment
+    // For segment ending on central mirror, it should not be blocked by walls because we removed mirror gap.
+    if (segmentBlockedByWalls(s1.a, s1.b, walls, eps)) return { ok: false, reason: "blocked eye->side" };
+    if (segmentBlockedByWalls(s2.a, s2.b, walls, eps)) return { ok: false, reason: "blocked side->central" };
+    if (segmentBlockedByWalls(s3.a, s3.b, walls, eps)) return { ok: false, reason: "blocked central->target" };
+
+    return { ok: true, points: [eye, P1, P2, target], mirror: sideSeg.name, order: "E→S→C→T" };
+  }
+
+  function tryPath_Eye_Central_Side_Target(eye, sideSeg, centralSeg, target, walls, eps) {
+    // Order: Eye -> Central -> Side -> Target
+    // Method:
+    // 1) Reflect Target across SIDE to get T1.
+    // 2) Reflect T1 across CENTRAL to get T2.
+    // 3) Line from Eye to T2 intersects central at P1.
+    // 4) Line from P1 to T1 intersects side at P2.
+    // 5) Validate not blocked, and within segments.
+
+    const T1 = reflectPointAcrossLine(target, sideSeg.a, sideSeg.b);
+    const T2 = reflectPointAcrossLine(T1, centralSeg.a, centralSeg.b);
+
+    const dirE = sub(T2, eye);
+    if (len(dirE) < 1e-9) return { ok: false };
+
+    const P1 = intersectLineWithSegment(eye, dirE, centralSeg.a, centralSeg.b, 1e-9);
+    if (!P1) return { ok: false, reason: "miss central" };
+
+    const dir1 = sub(T1, P1);
+    if (len(dir1) < 1e-9) return { ok: false };
+
+    const P2 = intersectLineWithSegment(P1, dir1, sideSeg.a, sideSeg.b, 1e-9);
+    if (!P2) return { ok: false, reason: "miss side" };
+
+    const s1 = { a: eye, b: P1 };
+    const s2 = { a: P1, b: P2 };
+    const s3 = { a: P2, b: target };
+
+    if (segmentBlockedByWalls(s1.a, s1.b, walls, eps)) return { ok: false, reason: "blocked eye->central" };
+    if (segmentBlockedByWalls(s2.a, s2.b, walls, eps)) return { ok: false, reason: "blocked central->side" };
+    if (segmentBlockedByWalls(s3.a, s3.b, walls, eps)) return { ok: false, reason: "blocked side->target" };
+
+    return { ok: true, points: [eye, P1, P2, target], mirror: sideSeg.name, order: "E→C→S→T" };
+  }
+
+  // -----------------------------
+  // Canvas rendering
+  // -----------------------------
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+
+  function resizeCanvas() {
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", () => { resizeCanvas(); update(); });
+
+  function computeViewBounds() {
+    // Determine bounds from walls, desk, head, and mirrors
+    const cm = getCentralMirrorSegment();
+    const mirrors = getSideMirrors();
+    const { head, eye } = getHeadAndEye();
+
+    const pts = [
+      V(0,0),
+      V(state.backWallLen, 0),
+      V(0, state.shortWallLen),
+      V(state.deskX, 0),
+      V(state.deskX + state.deskW, state.deskD),
+      head.c,
+      eye,
+      cm.a, cm.b
+    ];
+
+    for (const m of mirrors) pts.push(m.a, m.b, m.center);
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+
+    // pad
+    const pad = 6;
+    minX -= pad; maxX += pad;
+    minY -= pad; maxY += pad;
+
+    // Keep y>= -10 for nicer view
+    minY = Math.min(minY, -6);
+
+    return { minX, maxX, minY, maxY };
+  }
+
+  function worldToScreen(p, bounds, w, h) {
+    const sx = (p.x - bounds.minX) / (bounds.maxX - bounds.minX);
+    const sy = (p.y - bounds.minY) / (bounds.maxY - bounds.minY);
+    const x = sx * w;
+    const y = sy * h;
+    return V(x, y);
+  }
+
+  function drawLine(a, b, strokeStyle, lineWidth = 2, dash = null, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCircle(c, r, strokeStyle, fillStyle = null, lineWidth = 2, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = lineWidth;
+    ctx.strokeStyle = strokeStyle;
+    if (fillStyle) ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, Math.PI*2);
+    if (fillStyle) ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawText(text, x, y, color = "rgba(231,238,252,0.9)", font = "12px var(--mono)") {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = font;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawRect(x, y, w, h, stroke, fill, lineWidth = 1, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fillRect(x, y, w, h);
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.strokeRect(x, y, w, h);
+    }
+    ctx.restore();
+  }
+
+  // -----------------------------
+  // Main update loop
+  // -----------------------------
+  function update() {
+    resizeCanvas();
+
+    // Clamp some dependent geometry a bit
+    state.centralLeft = clamp(state.centralLeft, 0, state.backWallLen - 1);
+    state.centralW = clamp(state.centralW, 1, state.backWallLen - state.centralLeft);
+
+    const bounds = computeViewBounds();
+    const W = canvas.getBoundingClientRect().width;
+    const H = canvas.getBoundingClientRect().height;
+
+    const walls = getWallSegments();
+    const central = getCentralMirrorSegment();
+    const mirrors = getSideMirrors();
+    const { head, eye } = getHeadAndEye();
+    const targets = getTargetPoints();
+    const eps = state.eps;
+
+    // Evaluate visibility for each target
+    const successes = [];
+    const failures = [];
+    const visible = new Array(targets.length).fill(false);
+
+    // For display, store at most a limited number of rays
+    const rayLimit = Math.max(0, Math.floor(state.rayLimit));
+    const shouldLimit = rayLimit > 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      const T = targets[i];
+
+      let best = null;
+      const tryOrders = [];
+      if (state.pathMode === 0) tryOrders.push("ESC");
+      else if (state.pathMode === 1) tryOrders.push("ECS");
+      else tryOrders.push("ESC", "ECS");
+
+      for (const side of mirrors) {
+        for (const order of tryOrders) {
+          const res = (order === "ESC")
+            ? tryPath_Eye_Side_Central_Target(eye, side, central, T, walls, eps)
+            : tryPath_Eye_Central_Side_Target(eye, side, central, T, walls, eps);
+
+          if (res.ok) { best = res; break; }
+        }
+        if (best) break;
+      }
+
+      if (best) {
+        visible[i] = true;
+        successes.push(best);
+      } else {
+        failures.push({ points: [eye, T] });
+      }
+    }
+
+    const visCount = visible.filter(Boolean).length;
+    const coverage = targets.length ? (visCount / targets.length) : 0;
+    const coveragePct = Math.round(coverage * 100);
+
+    const pass = coveragePct >= Math.round(state.passThresh);
+
+    passFailEl.textContent = pass ? "PASS" : "FAIL";
+    coverageEl.textContent = `Coverage: ${coveragePct}% (${visCount}/${targets.length})`;
+    statusPill.classList.toggle("pass", pass);
+    statusPill.classList.toggle("fail", !pass);
+    statusPill.classList.add("pill");
+    statusPill.classList.remove("pass","fail");
+    statusPill.classList.add(pass ? "pass" : "fail");
+
+    const pm = state.pathMode;
+    pathModeText.textContent =
+      pm === 0 ? "Path: Eye → Side → Central → Target"
+      : pm === 1 ? "Path: Eye → Central → Side → Target"
+      : "Path: Both orders";
+
+    // ---- Draw ----
+    ctx.clearRect(0, 0, W, H);
+
+    // Soft grid
+    ctx.save();
+    ctx.globalAlpha = 0.10;
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    const gridStep = 50;
+    for (let x = 0; x < W; x += gridStep) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += gridStep) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.restore();
+
+    function w2s(p) { return worldToScreen(p, bounds, W, H); }
+    function wLen(inches) {
+      // Convert a world-length to screen length based on x scale
+      const sx = W / (bounds.maxX - bounds.minX);
+      return inches * sx;
+    }
+
+    // Desk
+    const desk = getDeskRect();
+    const deskA = w2s(V(desk.x, desk.y));
+    const deskB = w2s(V(desk.x + desk.w, desk.y + desk.h));
+    drawRect(deskA.x, deskA.y, deskB.x - deskA.x, deskB.y - deskA.y,
+      "rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)", 1, 1);
+
+    // Walls
+    for (const w of walls) {
+      const a = w2s(w.a), b = w2s(w.b);
+      drawLine(a, b, "rgba(255,255,255,0.78)", 4, null, 0.95);
+    }
+    // Central mirror (gap on wall)
+    {
+      const a = w2s(central.a), b = w2s(central.b);
+      drawLine(a, b, "rgba(106,169,255,0.95)", 6, null, 1);
+      drawText("Central mirror", (a.x+b.x)/2 - 56, a.y - 8, "rgba(176,205,255,0.95)");
+    }
+
+    // Side mirrors
+    for (const m of mirrors) {
+      const a = w2s(m.a), b = w2s(m.b);
+      drawLine(a, b, "rgba(106,169,255,0.92)", 6, null, 1);
+      const c = w2s(m.center);
+      drawCircle(c, 4, "rgba(106,169,255,0.95)", "rgba(106,169,255,0.35)", 2, 1);
+      drawText(`${m.name} side mirror`, c.x + 6, c.y - 6, "rgba(176,205,255,0.95)");
+    }
+
+    // Head and eye
+    {
+      const hc = w2s(head.c);
+      drawCircle(hc, wLen(head.r), "rgba(231,238,252,0.85)", "rgba(231,238,252,0.06)", 2, 1);
+      drawText("Head", hc.x - 14, hc.y + 4, "rgba(231,238,252,0.85)");
+      const ep = w2s(eye);
+      drawCircle(ep, 4, "rgba(231,238,252,0.9)", "rgba(231,238,252,0.35)", 2, 1);
+      drawText("Eye", ep.x + 6, ep.y + 4, "rgba(231,238,252,0.85)");
+    }
+
+    // Target region points
+    {
+      for (let i = 0; i < targets.length; i++) {
+        const p = w2s(targets[i]);
+        const ok = visible[i];
+        const fill = ok ? "rgba(93,255,154,0.85)" : "rgba(255,106,106,0.85)";
+        drawCircle(p, 3, "rgba(0,0,0,0.35)", fill, 1, 1);
+      }
+      const label = w2s(add(head.c, V(0, head.r + 1.2)));
+      drawText("Back-of-head targets", label.x - 85, label.y + 14, "rgba(231,238,252,0.75)");
+    }
+
+    // Rays: draw working rays in green; optionally some failures in red
+    // Select rays to show for readability
+    const shownSuccesses = shouldLimit ? successes.slice(0, rayLimit) : successes;
+    const shownFailures = shouldLimit ? failures.slice(0, Math.max(0, Math.min(rayLimit, 8))) : failures.slice(0, 12);
+
+    for (const r of shownSuccesses) {
+      const pts = r.points.map(w2s);
+      for (let i = 0; i < pts.length - 1; i++) {
+        drawLine(pts[i], pts[i+1], "rgba(93,255,154,0.92)", 2.6, null, 1);
+      }
+    }
+
+    for (const f of shownFailures) {
+      const pts = f.points.map(w2s);
+      if (pts.length >= 2) {
+        drawLine(pts[0], pts[1], "rgba(255,106,106,0.55)", 1.8, [6, 6], 1);
+      }
+    }
+
+    // HUD
+    drawText(`Inches | x along back wall → | y outward ↓`, 12, 18, "rgba(168,179,200,0.85)");
+    drawText(`Visible targets: ${visCount}/${targets.length}`, 12, 36, "rgba(168,179,200,0.85)");
+    drawText(`Short wall: x=0, y∈[0, ${state.shortWallLen.toFixed(1)}]`, 12, 54, "rgba(168,179,200,0.85)");
+    drawText(`Central mirror: y=0, x∈[${state.centralLeft.toFixed(1)}, ${(state.centralLeft+state.centralW).toFixed(1)}]`, 12, 72, "rgba(168,179,200,0.85)");
+  }
+
+  // Initial paint
+  update();
+})();
+</script>
+</body>
+</html>

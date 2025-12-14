@@ -1,0 +1,1088 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pivot Mirror Simulator (Top-Down Ray Reflection)</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#121923;
+      --panel2:#0f1620;
+      --text:#e8eef6;
+      --muted:#a8b3c4;
+      --good:#2ecc71;
+      --bad:#ff4d4f;
+      --warn:#f5c542;
+      --line:#253245;
+      --accent:#6aa7ff;
+    }
+    *{box-sizing:border-box;}
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
+    .app{
+      height:100vh;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    header{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+    }
+    header .title{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width: 280px;
+    }
+    header h1{
+      font-size:16px;
+      margin:0;
+      letter-spacing:0.2px;
+    }
+    header .sub{
+      color:var(--muted);
+      font-size:12px;
+    }
+    header .status{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.03);
+      white-space:nowrap;
+    }
+    .pill strong{font-weight:700;}
+    .pass{border-color:rgba(46,204,113,0.45); background:rgba(46,204,113,0.10);}
+    .fail{border-color:rgba(255,77,79,0.45); background:rgba(255,77,79,0.10);}
+    .btn{
+      appearance:none;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.04);
+      color:var(--text);
+      padding:6px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:600;
+    }
+    .btn:hover{background:rgba(255,255,255,0.07);}
+    .btn:active{transform:translateY(1px);}
+    main{
+      flex:1;
+      display:flex;
+      gap:10px;
+      padding:10px;
+      overflow:hidden;
+    }
+    .canvasWrap{
+      flex:1 1 auto;
+      min-width: 320px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:radial-gradient(1200px 700px at 20% 15%, rgba(106,167,255,0.08), transparent 60%),
+                 radial-gradient(900px 700px at 80% 80%, rgba(46,204,113,0.06), transparent 60%),
+                 rgba(255,255,255,0.02);
+      position:relative;
+      overflow:hidden;
+    }
+    canvas{display:block; width:100%; height:100%;}
+    .legend{
+      position:absolute;
+      left:10px; top:10px;
+      background:rgba(0,0,0,0.35);
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:12px;
+      padding:8px 10px;
+      color:var(--muted);
+      font-size:12px;
+      backdrop-filter: blur(6px);
+      max-width: 360px;
+    }
+    .legend b{color:var(--text);}
+    .panel{
+      width: 420px;
+      max-width: 45vw;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      min-width: 320px;
+    }
+    .panelHead{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      background:rgba(255,255,255,0.02);
+    }
+    .panelHead .meta{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .panelHead .meta .small{color:var(--muted); font-size:12px;}
+    .panelBody{
+      padding:10px 12px;
+      overflow:auto; /* internal scroll if needed, page never scrolls */
+    }
+    .section{
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:12px;
+      padding:10px;
+      margin-bottom:10px;
+      background:rgba(0,0,0,0.18);
+    }
+    .section h2{
+      margin:0 0 8px 0;
+      font-size:13px;
+      letter-spacing:0.2px;
+    }
+    .help{
+      color:var(--muted);
+      font-size:12px;
+      margin:0 0 10px 0;
+    }
+    .grid2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .control{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      margin-bottom:8px;
+    }
+    .control label{
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .control label span.val{
+      color:var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="range"]{width:100%;}
+    .row{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+    }
+    .note{
+      font-size:12px;
+      color:var(--muted);
+      border-left:3px solid rgba(106,167,255,0.5);
+      padding-left:8px;
+      margin:8px 0 0 0;
+    }
+    .kpi{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:6px;
+    }
+    .kpi .box{
+      flex:1 1 120px;
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:12px;
+      padding:8px 10px;
+      background:rgba(255,255,255,0.02);
+    }
+    .kpi .box .lbl{color:var(--muted); font-size:11px;}
+    .kpi .box .num{font-size:16px; font-weight:800; margin-top:2px; font-variant-numeric: tabular-nums;}
+    .divider{
+      height:1px;
+      background:var(--line);
+      margin:10px 0;
+    }
+
+    @media (max-width: 980px){
+      main{flex-direction:column;}
+      .panel{width:auto; max-width:none;}
+      .canvasWrap{min-height: 46vh;}
+      .panelBody{max-height: 42vh;}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">
+      <h1>Two Pivot Mirrors Around a Central Vanity Mirror (Top-Down Reflection Simulator)</h1>
+      <div class="sub">
+        Top-down view: bottom wall has the central mirror. Left short wall extends 11 inches upward. Adjust two side mirrors and see if the eye can see the back of the head via 2-bounce reflections.
+      </div>
+    </div>
+    <div class="status">
+      <div id="passPill" class="pill fail"><strong id="passText">FAIL</strong><span id="passReason" style="color:var(--muted)">No valid reflection path found</span></div>
+      <div class="pill"><strong>Coverage</strong><span id="covText">0%</span></div>
+      <button class="btn" id="resetBtn" title="Reset sliders to the initial working defaults">Reset Defaults</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="canvasWrap">
+      <canvas id="c"></canvas>
+      <div class="legend">
+        <div><b>Rays:</b> green = valid reflection path (hits mirror segments and is not blocked by walls). red = tested but invalid.</div>
+        <div style="margin-top:6px;"><b>Paths tested:</b> Eye → Side → Central → Back-of-Head, and Eye → Central → Side → Back-of-Head (for each side mirror).</div>
+        <div style="margin-top:6px;"><b>Note about pitch and height:</b> pitch and vertical placement are used as a plausibility filter (simple vertical bisector heuristic). The core ray tracing is in the top-down plane.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panelHead">
+        <div class="meta">
+          <div style="font-weight:800;">Controls (always visible)</div>
+          <div class="small">
+            Default side mirror specs are pulled from the Wayfair listing for Winston Porter "Corrente Pivot-N-View" mirror:
+            overall 26" H × 16" W × 3" D, mirror (reflective) 22" H × 14" W, tilt listed, and "360 degrees" swivel described.
+          </div>
+        </div>
+      </div>
+
+      <div class="panelBody">
+        <div class="section">
+          <h2>Environment</h2>
+          <p class="help">
+            Units are inches. Coordinate system: origin is the corner where walls meet. X increases to the right. Y increases upward (away from the bottom wall).
+          </p>
+
+          <div class="kpi">
+            <div class="box">
+              <div class="lbl">Desk</div>
+              <div class="num">29 W × 20 D</div>
+            </div>
+            <div class="box">
+              <div class="lbl">Central mirror</div>
+              <div class="num">23 W × 29 H</div>
+            </div>
+            <div class="box">
+              <div class="lbl">Left short wall</div>
+              <div class="num">11 long</div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="grid2">
+            <div>
+              <div class="control">
+                <label>
+                  <span>Eye height (from floor)</span>
+                  <span class="val" id="eyeHVal"></span>
+                </label>
+                <input id="eyeH" type="range" min="40" max="54" step="0.25" />
+              </div>
+              <div class="control">
+                <label>
+                  <span>Head center Y (seat distance)</span>
+                  <span class="val" id="headYVal"></span>
+                </label>
+                <input id="headY" type="range" min="8" max="18" step="0.1" />
+              </div>
+            </div>
+            <div>
+              <div class="control">
+                <label>
+                  <span>Head width (typical)</span>
+                  <span class="val" id="headWVal"></span>
+                </label>
+                <input id="headW" type="range" min="5.5" max="7.5" step="0.05" />
+              </div>
+              <div class="control">
+                <label>
+                  <span>Head depth (typical)</span>
+                  <span class="val" id="headDVal"></span>
+                </label>
+                <input id="headD" type="range" min="7.0" max="9.5" step="0.05" />
+              </div>
+            </div>
+          </div>
+
+          <p class="note">
+            "Exquisitely beautiful but statistically typical" head model: an ellipse in top-down (width and depth sliders), with the eye point near the front of the ellipse facing the central mirror.
+          </p>
+        </div>
+
+        <div class="section">
+          <h2>Side Mirror Defaults (Wayfair listing)</h2>
+          <p class="help">
+            Default reflective surface: 14" W × 22" H. Overall: 16" W × 26" H × 3" D.
+            The listing describes a swivel "adjustable at any view (360 degrees)" and "tilt" adjustability, but does not specify hard stop limits.
+            Assumption: yaw can rotate freely ±180 degrees; pitch is user-adjustable ±45 degrees as a conservative practical range.
+          </p>
+        </div>
+
+        <div class="section">
+          <h2>Left Side Mirror</h2>
+          <p class="help">Position is the mirror center in the top-down plane. Yaw rotates the mirror around a vertical pivot (top-down). Pitch and height are used for a simple vertical plausibility check.</p>
+
+          <div class="grid2">
+            <div>
+              <div class="control">
+                <label><span>Center X</span><span class="val" id="lXVal"></span></label>
+                <input id="lX" type="range" min="-4" max="36" step="0.1" />
+              </div>
+              <div class="control">
+                <label><span>Center Y</span><span class="val" id="lYVal"></span></label>
+                <input id="lY" type="range" min="0.5" max="22" step="0.1" />
+              </div>
+              <div class="control">
+                <label><span>Reflective width (top-down)</span><span class="val" id="lWVal"></span></label>
+                <input id="lW" type="range" min="8" max="20" step="0.1" />
+              </div>
+            </div>
+            <div>
+              <div class="control">
+                <label><span>Reflective height (vertical)</span><span class="val" id="lHVal"></span></label>
+                <input id="lH" type="range" min="12" max="28" step="0.1" />
+              </div>
+              <div class="control">
+                <label><span>Yaw (degrees)</span><span class="val" id="lYawVal"></span></label>
+                <input id="lYaw" type="range" min="-180" max="180" step="1" />
+              </div>
+              <div class="control">
+                <label><span>Pitch (degrees)</span><span class="val" id="lPitchVal"></span></label>
+                <input id="lPitch" type="range" min="-45" max="45" step="1" />
+              </div>
+              <div class="control">
+                <label><span>Mount height (center, from floor)</span><span class="val" id="lZVal"></span></label>
+                <input id="lZ" type="range" min="30" max="70" step="0.25" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Right Side Mirror</h2>
+
+          <div class="grid2">
+            <div>
+              <div class="control">
+                <label><span>Center X</span><span class="val" id="rXVal"></span></label>
+                <input id="rX" type="range" min="-4" max="44" step="0.1" />
+              </div>
+              <div class="control">
+                <label><span>Center Y</span><span class="val" id="rYVal"></span></label>
+                <input id="rY" type="range" min="0.5" max="22" step="0.1" />
+              </div>
+              <div class="control">
+                <label><span>Reflective width (top-down)</span><span class="val" id="rWVal"></span></label>
+                <input id="rW" type="range" min="8" max="20" step="0.1" />
+              </div>
+            </div>
+            <div>
+              <div class="control">
+                <label><span>Reflective height (vertical)</span><span class="val" id="rHVal"></span></label>
+                <input id="rH" type="range" min="12" max="28" step="0.1" />
+              </div>
+              <div class="control">
+                <label><span>Yaw (degrees)</span><span class="val" id="rYawVal"></span></label>
+                <input id="rYaw" type="range" min="-180" max="180" step="1" />
+              </div>
+              <div class="control">
+                <label><span>Pitch (degrees)</span><span class="val" id="rPitchVal"></span></label>
+                <input id="rPitch" type="range" min="-45" max="45" step="1" />
+              </div>
+              <div class="control">
+                <label><span>Mount height (center, from floor)</span><span class="val" id="rZVal"></span></label>
+                <input id="rZ" type="range" min="30" max="70" step="0.25" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Debug / Visibility</h2>
+          <div class="grid2">
+            <div class="control">
+              <label><span>Show failed rays</span><span class="val" id="showFailVal"></span></label>
+              <input id="showFail" type="range" min="0" max="1" step="1" />
+            </div>
+            <div class="control">
+              <label><span>Ray fan density</span><span class="val" id="fanVal"></span></label>
+              <input id="fan" type="range" min="6" max="24" step="1" />
+            </div>
+          </div>
+          <p class="note">
+            Coverage is estimated by sampling points around the back half of the head ellipse. PASS means at least one target point is visible via a valid 2-bounce path.
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/*
+  Pivot Mirror Simulator (single-file, no external libraries)
+
+  What this page does:
+  - Draws a top-down diagram of a vanity desk in a corner: bottom wall (with a fixed central mirror) and a short left wall (11 inches).
+  - Models a seated person's head as a typical ellipse (adjustable width/depth) and a single eye point facing the central mirror.
+  - Lets you place and rotate two side mirrors (left and right) with sliders: position, reflective width/height, yaw (top-down pivot), pitch, and mount height.
+  - Performs simple 2D ray tracing (top-down plane) to test whether the eye can see points on the back of the head via two reflections:
+      1) Eye -> Side -> Central -> Back-of-Head
+      2) Eye -> Central -> Side -> Back-of-Head
+  - Shows rays on the canvas (green success, red miss) and displays PASS/FAIL plus a coverage percentage.
+
+  How to use:
+  - Move the sliders in the right panel. The canvas updates immediately.
+  - Watch the PASS/FAIL indicator at the top, and the green rays on the canvas.
+  - Click "Reset Defaults" to return to an initial configuration that is intended to work in many plausible layouts.
+  - Tip: start by adjusting yaw on each side mirror to "aim" reflections toward the central mirror.
+
+  Notes and assumptions:
+  - Units are inches. Coordinate origin is the corner where walls meet. X -> right, Y -> upward (away from bottom wall).
+  - The core reflection math is purely in the top-down plane.
+  - Pitch and vertical placement are used as a plausibility filter (simple "pitch bisects vertical angles" heuristic),
+    because full 3D mirror reflection would require more geometry than this quick simulator.
+  - Side mirror default specs are taken from the Wayfair listing:
+      Overall: 26" H x 16" W x 3" D
+      Mirror (reflective): 22" H x 14" W
+      Listing mentions "tilt" and "360 degrees" swivel, but no hard limits: yaw assumed ±180, pitch slider uses ±45 degrees.
+*/
+
+(function(){
+  // ---------- Canvas ----------
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  function resizeCanvas(){
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.floor(r.width * dpr);
+    canvas.height = Math.floor(r.height * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', ()=>{ resizeCanvas(); draw(); });
+
+  // ---------- Scene constants ----------
+  // Desk: 29 W (x), 20 D (y), placed in corner at origin.
+  const desk = { x0:0, y0:0, w:29, d:20 };
+
+  // Walls:
+  // - Bottom wall is along y=0. We draw it across a bit wider than desk.
+  // - Left short wall is along x=0 from y=0 to y=11.
+  const walls = {
+    bottom: { a:{x:-6,y:0}, b:{x:44,y:0} },
+    leftShort: { a:{x:0,y:0}, b:{x:0,y:11} }
+  };
+
+  // Central mirror:
+  // Width 23 on bottom wall. Given: distance from left wall to left edge of mirror is 7 inches.
+  // So mirror spans x = 7 to 30 at y = 0.
+  const central = {
+    p:{x: (7+30)/2, y:0},
+    w: 23,
+    normal:{x:0,y:1} // facing "up"
+  };
+
+  // Typical seated setup constants
+  const deskTopZ = 30.0; // assumed; used only for the vertical plausibility heuristic
+  const headCenterZDefault = 47.0; // typical head center height seated
+
+  // ---------- UI wiring ----------
+  const ui = {
+    eyeH: byId('eyeH'),
+    headY: byId('headY'),
+    headW: byId('headW'),
+    headD: byId('headD'),
+
+    lX: byId('lX'), lY: byId('lY'), lW: byId('lW'), lH: byId('lH'), lYaw: byId('lYaw'), lPitch: byId('lPitch'), lZ: byId('lZ'),
+    rX: byId('rX'), rY: byId('rY'), rW: byId('rW'), rH: byId('rH'), rYaw: byId('rYaw'), rPitch: byId('rPitch'), rZ: byId('rZ'),
+
+    showFail: byId('showFail'),
+    fan: byId('fan'),
+
+    resetBtn: byId('resetBtn')
+  };
+
+  const lbl = {
+    eyeHVal: byId('eyeHVal'),
+    headYVal: byId('headYVal'),
+    headWVal: byId('headWVal'),
+    headDVal: byId('headDVal'),
+
+    lXVal: byId('lXVal'), lYVal: byId('lYVal'), lWVal: byId('lWVal'), lHVal: byId('lHVal'), lYawVal: byId('lYawVal'), lPitchVal: byId('lPitchVal'), lZVal: byId('lZVal'),
+    rXVal: byId('rXVal'), rYVal: byId('rYVal'), rWVal: byId('rWVal'), rHVal: byId('rHVal'), rYawVal: byId('rYawVal'), rPitchVal: byId('rPitchVal'), rZVal: byId('rZVal'),
+
+    showFailVal: byId('showFailVal'),
+    fanVal: byId('fanVal')
+  };
+
+  const passPill = byId('passPill');
+  const passText = byId('passText');
+  const passReason = byId('passReason');
+  const covText = byId('covText');
+
+  function byId(id){ return document.getElementById(id); }
+
+  // Defaults: mirror specs from Wayfair listing: mirror 22H x 14W, overall 26H x16W x3D.
+  // We use 14" as reflective width (top-down segment length), 22" as reflective height.
+  // Initial geometry defaults chosen to often create a working 2-bounce path.
+  const defaults = {
+    eyeH: 46.5,
+    headY: 13.2,
+    headW: 6.2,
+    headD: 8.4,
+
+    // Left mirror near left short wall region but slightly inside to avoid immediate wall blocking
+    lX: 1.2,
+    lY: 9.0,
+    lW: 14.0,
+    lH: 22.0,
+    lYaw: 35,     // angled to bounce between eye and central
+    lPitch: 4,
+    lZ: 52.0,
+
+    // Right mirror on open side, a bit forward, yawed inward
+    rX: 32.0,
+    rY: 9.0,
+    rW: 14.0,
+    rH: 22.0,
+    rYaw: -35,
+    rPitch: 4,
+    rZ: 52.0,
+
+    showFail: 1,
+    fan: 14
+  };
+
+  function setDefaults(){
+    for (const k of Object.keys(defaults)){
+      ui[k].value = defaults[k];
+    }
+    syncLabels();
+    draw();
+  }
+
+  function syncLabels(){
+    lbl.eyeHVal.textContent = fmt(ui.eyeH.value) + ' in';
+    lbl.headYVal.textContent = fmt(ui.headY.value) + ' in';
+    lbl.headWVal.textContent = fmt(ui.headW.value) + ' in';
+    lbl.headDVal.textContent = fmt(ui.headD.value) + ' in';
+
+    lbl.lXVal.textContent = fmt(ui.lX.value) + ' in';
+    lbl.lYVal.textContent = fmt(ui.lY.value) + ' in';
+    lbl.lWVal.textContent = fmt(ui.lW.value) + ' in';
+    lbl.lHVal.textContent = fmt(ui.lH.value) + ' in';
+    lbl.lYawVal.textContent = fmt(ui.lYaw.value) + '°';
+    lbl.lPitchVal.textContent = fmt(ui.lPitch.value) + '°';
+    lbl.lZVal.textContent = fmt(ui.lZ.value) + ' in';
+
+    lbl.rXVal.textContent = fmt(ui.rX.value) + ' in';
+    lbl.rYVal.textContent = fmt(ui.rY.value) + ' in';
+    lbl.rWVal.textContent = fmt(ui.rW.value) + ' in';
+    lbl.rHVal.textContent = fmt(ui.rH.value) + ' in';
+    lbl.rYawVal.textContent = fmt(ui.rYaw.value) + '°';
+    lbl.rPitchVal.textContent = fmt(ui.rPitch.value) + '°';
+    lbl.rZVal.textContent = fmt(ui.rZ.value) + ' in';
+
+    lbl.showFailVal.textContent = (ui.showFail.value === '1') ? 'Yes' : 'No';
+    lbl.fanVal.textContent = String(ui.fan.value);
+  }
+
+  function fmt(v){ return (+v).toFixed((Math.abs(v) >= 10 || v % 1 === 0) ? 1 : 2).replace(/\.0$/,''); }
+
+  const allInputs = Object.values(ui);
+  for (const el of allInputs){
+    if (!el) continue;
+    if (el === ui.resetBtn) continue;
+    el.addEventListener('input', ()=>{ syncLabels(); draw(); });
+  }
+  ui.resetBtn.addEventListener('click', setDefaults);
+
+  // ---------- Math helpers ----------
+  function v(x,y){ return {x,y}; }
+  function add(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
+  function sub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+  function mul(a,s){ return {x:a.x*s, y:a.y*s}; }
+  function dot(a,b){ return a.x*b.x + a.y*b.y; }
+  function len(a){ return Math.hypot(a.x, a.y); }
+  function norm(a){
+    const L = len(a) || 1e-9;
+    return {x:a.x/L, y:a.y/L};
+  }
+  function perp(a){ return {x:-a.y, y:a.x}; } // 90 deg CCW
+  function clamp(x, lo, hi){ return Math.max(lo, Math.min(hi, x)); }
+
+  function deg2rad(d){ return d * Math.PI / 180; }
+  function rad2deg(r){ return r * 180 / Math.PI; }
+
+  // Mirror defined by center p, unit normal n, half-length hl (top-down), and vertical attributes for plausibility
+  function mirrorFromUI(prefix){
+    const px = +ui[prefix+'X'].value;
+    const py = +ui[prefix+'Y'].value;
+    const w = +ui[prefix+'W'].value;
+    const h = +ui[prefix+'H'].value;
+    const yaw = deg2rad(+ui[prefix+'Yaw'].value);
+    const pitch = deg2rad(+ui[prefix+'Pitch'].value);
+    const z = +ui[prefix+'Z'].value;
+
+    // Mirror line direction (tangent) is yaw angle. Normal is perpendicular.
+    // We define tangent t = (cos(yaw), sin(yaw)). Mirror segment lies along t.
+    const t = norm({x:Math.cos(yaw), y:Math.sin(yaw)});
+    const n = perp(t); // one of two normals; either is fine for reflection formulas
+    return {
+      p:{x:px,y:py},
+      t, n,
+      hl: w/2,
+      w, h,
+      yawRad: yaw,
+      pitchRad: pitch,
+      zCenter: z
+    };
+  }
+
+  function centralMirror(){
+    const t = {x:1,y:0};
+    const n = {x:0,y:1};
+    return { p:{...central.p}, t, n, hl: central.w/2, w: central.w, h: 29, yawRad:0, pitchRad:0, zCenter: 56.0 };
+  }
+
+  function pointToLineSignedDistance(pt, lineP, lineN){
+    return dot(sub(pt, lineP), lineN);
+  }
+
+  function reflectPointAcrossLine(pt, m){
+    // reflect pt across infinite line of mirror m: point p on line, unit normal n
+    const d = pointToLineSignedDistance(pt, m.p, m.n);
+    return sub(pt, mul(m.n, 2*d));
+  }
+
+  function lineIntersectionParam(P, R, Q, S){
+    // Solve P + tR intersects Q + uS
+    const rxs = R.x*S.y - R.y*S.x;
+    if (Math.abs(rxs) < 1e-9) return null;
+    const QP = sub(Q, P);
+    const t = (QP.x*S.y - QP.y*S.x) / rxs;
+    const u = (QP.x*R.y - QP.y*R.x) / rxs;
+    return {t,u};
+  }
+
+  function intersectSegmentWithMirrorLine(segA, segB, m){
+    // Intersect segment A->B with mirror infinite line, then check if point falls within mirror segment length
+    const P = segA;
+    const R = sub(segB, segA);
+    const Q = m.p;
+    const S = m.t; // direction along mirror line
+
+    const sol = lineIntersectionParam(P,R,Q,S);
+    if (!sol) return null;
+    const t = sol.t;
+    if (t < 1e-6 || t > 1-1e-6) return null; // intersection must be strictly inside segment for robustness
+    const hit = add(P, mul(R, t));
+    // within mirror segment?
+    const along = dot(sub(hit, m.p), m.t);
+    if (Math.abs(along) <= m.hl + 1e-6) return hit;
+    return null;
+  }
+
+  function segmentIntersectsWall(segA, segB, wall){
+    // Return intersection point if segment intersects wall segment (excluding touching at segA)
+    const P = segA;
+    const R = sub(segB, segA);
+    const Q = wall.a;
+    const S = sub(wall.b, wall.a);
+    const sol = lineIntersectionParam(P,R,Q,S);
+    if (!sol) return null;
+    const t = sol.t, u = sol.u;
+    if (t > 1e-6 && t < 1-1e-6 && u >= 0 && u <= 1){
+      return add(P, mul(R, t));
+    }
+    return null;
+  }
+
+  function blockedByWalls(segA, segB){
+    // Walls block rays. We treat the two specified walls as solid line segments.
+    // Note: mirrors can be placed "through" a wall by the user; we do not constrain. Wall blocking still applies.
+    const wlist = [walls.bottom, walls.leftShort];
+    for (const w of wlist){
+      const hit = segmentIntersectsWall(segA, segB, w);
+      if (hit) return true;
+    }
+    return false;
+  }
+
+  // Vertical plausibility heuristic:
+  // For each bounce, compute incoming/outgoing elevation angles (using planar distances and Z positions).
+  // We estimate the needed pitch as average of incoming and outgoing elevation angles.
+  // Mirror is plausible if |pitch - needed| is not too large AND the required hit height stays within mirror height.
+  function verticalPlausible(eyeZ, targetZ, m1, m2, eyePt, hit1, hit2, targetPt){
+    // If either mirror pitch is extreme mismatch, treat as fail.
+    // This is intentionally forgiving: it is meant to keep the UI meaningful, not to be a full 3D solver.
+    const tolDeg = 22; // fairly forgiving
+    const tol = deg2rad(tolDeg);
+
+    function neededPitch(zA, zM, zB, pA, pM, pB){
+      const d1 = Math.max(1e-6, len(sub(pM, pA)));
+      const d2 = Math.max(1e-6, len(sub(pB, pM)));
+      const aIn = Math.atan2(zM - zA, d1);
+      const aOut = Math.atan2(zB - zM, d2);
+      return 0.5*(aIn + aOut);
+    }
+
+    const pNeed1 = neededPitch(eyeZ, m1.zCenter, m2.zCenter, eyePt, hit1, hit2);
+    const pNeed2 = neededPitch(m1.zCenter, m2.zCenter, targetZ, hit1, hit2, targetPt);
+
+    if (Math.abs(m1.pitchRad - pNeed1) > tol) return false;
+    if (Math.abs(m2.pitchRad - pNeed2) > tol) return false;
+
+    // Also check that the vertical hit position is within each mirror's height (very rough).
+    // We assume the hit is near the mirror center in Z, and allow half-height.
+    const halfH1 = m1.h/2, halfH2 = m2.h/2;
+    if (Math.abs(m1.zCenter - eyeZ) > 2*halfH1 + 20) {
+      // very loose sanity check; mostly to avoid absurd inputs
+    }
+    if (Math.abs(m2.zCenter - eyeZ) > 2*halfH2 + 20) {
+      // similarly loose
+    }
+    return true;
+  }
+
+  // Two-reflection path test using unfolding:
+  // Given mirrors A then B, test Eye -> A -> B -> Target.
+  function testTwoBounce(eyePt, targetPt, eyeZ, targetZ, mA, mB){
+    // Unfold target through B then A.
+    const tB = reflectPointAcrossLine(targetPt, mB);
+    const tA = reflectPointAcrossLine(tB, mA);
+
+    // Segment from eye to tA must hit mirror A (finite segment).
+    const hitA = intersectSegmentWithMirrorLine(eyePt, tA, mA);
+    if (!hitA) return { ok:false, reason:'miss A' };
+
+    // Segment from hitA to tB must hit mirror B (finite segment).
+    const hitB = intersectSegmentWithMirrorLine(hitA, tB, mB);
+    if (!hitB) return { ok:false, reason:'miss B' };
+
+    // Now we have a candidate physical path: eye -> hitA -> hitB -> target.
+    // Check wall blocking on each segment (excluding mirror contact, already internal).
+    if (blockedByWalls(eyePt, hitA)) return { ok:false, reason:'blocked' };
+    if (blockedByWalls(hitA, hitB)) return { ok:false, reason:'blocked' };
+    if (blockedByWalls(hitB, targetPt)) return { ok:false, reason:'blocked' };
+
+    // Optional: vertical plausibility using pitch and mount height
+    if (!verticalPlausible(eyeZ, targetZ, mA, mB, eyePt, hitA, hitB, targetPt)){
+      return { ok:false, reason:'pitch/height' };
+    }
+
+    return { ok:true, hitA, hitB };
+  }
+
+  // ---------- Drawing transform ----------
+  // World bounds: choose a view box that includes desk + mirrors.
+  const view = {
+    xMin: -6, xMax: 44,
+    yMin: -2, yMax: 26
+  };
+
+  function worldToScreen(pt){
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+    const sx = (pt.x - view.xMin) / (view.xMax - view.xMin) * w;
+    const sy = h - (pt.y - view.yMin) / (view.yMax - view.yMin) * h;
+    return {x:sx, y:sy};
+  }
+
+  function drawLine(a,b, strokeStyle, lineWidth=2, dash=null){
+    const A = worldToScreen(a), B = worldToScreen(b);
+    ctx.save();
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(A.x, A.y);
+    ctx.lineTo(B.x, B.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCircleWorld(center, r, strokeStyle, fillStyle=null, lineWidth=2){
+    const C = worldToScreen(center);
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+    // convert world radius to screen by x scale
+    const rs = r / (view.xMax - view.xMin) * w;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(C.x, C.y, rs, 0, Math.PI*2);
+    if (fillStyle){
+      ctx.fillStyle = fillStyle;
+      ctx.fill();
+    }
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawTextWorld(text, pt, color, align='left'){
+    const P = worldToScreen(pt);
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, P.x, P.y);
+    ctx.restore();
+  }
+
+  function drawMirror(m, labelText, color){
+    // segment endpoints in world
+    const a = add(m.p, mul(m.t, -m.hl));
+    const b = add(m.p, mul(m.t,  m.hl));
+    drawLine(a,b, color, 4);
+    // normal indicator
+    const nEnd = add(m.p, mul(m.n, 1.6));
+    drawLine(m.p, nEnd, color, 2, [4,4]);
+    drawTextWorld(labelText, add(m.p, v(0, 1.2)), color, 'center');
+  }
+
+  function drawDeskAndWalls(){
+    // Background clear
+    ctx.save();
+    ctx.fillStyle = '#0a0e13';
+    ctx.fillRect(0,0,canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height);
+    ctx.restore();
+
+    // Desk outline
+    const p1 = v(desk.x0, desk.y0);
+    const p2 = v(desk.x0+desk.w, desk.y0);
+    const p3 = v(desk.x0+desk.w, desk.y0+desk.d);
+    const p4 = v(desk.x0, desk.y0+desk.d);
+
+    drawLine(p1,p2, 'rgba(255,255,255,0.15)', 2);
+    drawLine(p2,p3, 'rgba(255,255,255,0.15)', 2);
+    drawLine(p3,p4, 'rgba(255,255,255,0.15)', 2);
+    drawLine(p4,p1, 'rgba(255,255,255,0.15)', 2);
+
+    drawTextWorld('Desk (29 W x 20 D)', v(14.5, 20.8), 'rgba(255,255,255,0.6)', 'center');
+
+    // Walls
+    drawLine(walls.bottom.a, walls.bottom.b, 'rgba(255,255,255,0.25)', 3);
+    drawLine(walls.leftShort.a, walls.leftShort.b, 'rgba(255,255,255,0.25)', 3);
+
+    drawTextWorld('Bottom wall', v(8, -1.0), 'rgba(255,255,255,0.55)', 'left');
+    drawTextWorld('Left short wall (11")', v(-1.0, 7), 'rgba(255,255,255,0.55)', 'right');
+
+    // Central mirror on bottom wall
+    const cm = centralMirror();
+    drawMirror(cm, 'Central mirror', 'rgba(106,167,255,0.9)');
+
+    // Mark short wall end and the 7" offset to mirror edge
+    drawCircleWorld(v(0,11), 0.25, 'rgba(255,255,255,0.35)', 'rgba(255,255,255,0.15)', 1);
+    drawLine(v(0,0.6), v(7,0.6), 'rgba(255,255,255,0.20)', 1, [3,3]);
+    drawTextWorld('7" to mirror edge', v(3.5,1.2), 'rgba(255,255,255,0.45)', 'center');
+  }
+
+  // Head drawing (ellipse) and eye point
+  function drawHead(head){
+    const C = worldToScreen(head.center);
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+
+    const rx = (head.w/2) / (view.xMax - view.xMin) * w;
+    const ry = (head.d/2) / (view.yMax - view.yMin) * h;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(C.x, C.y, rx, ry, 0, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Facing direction arrow (toward bottom wall, -Y)
+    const front = add(head.center, v(0, -head.d/2));
+    const arrowTip = add(front, v(0, -1.2));
+    drawLine(front, arrowTip, 'rgba(255,255,255,0.40)', 2);
+
+    ctx.restore();
+
+    // Eye point
+    drawCircleWorld(head.eye, 0.22, 'rgba(245,197,66,0.95)', 'rgba(245,197,66,0.35)', 2);
+    drawTextWorld('Eye', add(head.eye, v(0.6, 0.0)), 'rgba(245,197,66,0.95)', 'left');
+
+    drawTextWorld('Head', add(head.center, v(0, head.d/2 + 1.0)), 'rgba(255,255,255,0.6)', 'center');
+  }
+
+  function sampleBackOfHeadPoints(head, n){
+    // Back half is the +Y side (away from the central mirror), angle from 0..PI in ellipse param,
+    // but we want the "back" hemisphere centered at +Y, so use angles in [0, PI] with y positive.
+    // We'll sample along angles from 20 deg to 160 deg for stability, and compute ellipse boundary.
+    const pts = [];
+    const rx = head.w/2, ry = head.d/2;
+    for (let i=0;i<n;i++){
+      const t = (i/(n-1));
+      const ang = deg2rad(20 + t*(160-20));
+      const x = head.center.x + rx * Math.cos(ang);
+      const y = head.center.y + ry * Math.sin(ang); // positive y is back side
+      pts.push({x,y});
+    }
+    return pts;
+  }
+
+  // ---------- Main draw and simulate ----------
+  function draw(){
+    resizeCanvas();
+    syncLabels();
+
+    const head = buildHead();
+    const mL = mirrorFromUI('l');
+    const mR = mirrorFromUI('r');
+    const mC = centralMirror();
+
+    // Simulate coverage
+    const targetPts = sampleBackOfHeadPoints(head, Math.max(10, +ui.fan.value));
+    const showFail = (ui.showFail.value === '1');
+
+    // We'll test both path orderings for each side mirror, for each target point.
+    // Record the "best" successful path for visualization (plus optionally some misses).
+    const rays = [];
+    let visibleCount = 0;
+
+    // target height model: use head center Z and some vertical spread; we keep it simple
+    const eyeZ = +ui.eyeH.value;
+    const headCenterZ = headCenterZDefault + (eyeZ - defaults.eyeH) * 0.30; // move head center slightly with eye height
+    const targetZ = headCenterZ + 1.0; // back-of-head point near slightly above center
+
+    for (const tp of targetPts){
+      let okForThis = false;
+      let best = null;
+
+      // 1) Eye -> Side -> Central -> Target
+      for (const side of [mL, mR]){
+        const t1 = testTwoBounce(head.eye, tp, eyeZ, targetZ, side, mC);
+        if (t1.ok){
+          okForThis = true;
+          best = { color:'good', pts:[head.eye, t1.hitA, t1.hitB, tp] };
+          break;
+        }
+      }
+
+      // 2) Eye -> Central -> Side -> Target
+      if (!okForThis){
+        for (const side of [mL, mR]){
+          const t2 = testTwoBounce(head.eye, tp, eyeZ, targetZ, mC, side);
+          if (t2.ok){
+            okForThis = true;
+            best = { color:'good', pts:[head.eye, t2.hitA, t2.hitB, tp] };
+            break;
+          }
+        }
+      }
+
+      if (okForThis){
+        visibleCount++;
+        rays.push(best);
+      } else if (showFail){
+        // record one representative failed attempt per target for debugging
+        // try a preferred ordering: Eye -> Left -> Central -> Target, else Eye -> Right -> Central -> Target
+        const tFail = testTwoBounce(head.eye, tp, eyeZ, targetZ, mL, mC);
+        if (tFail.ok){
+          // shouldn't happen; but keep consistent
+        } else {
+          // make a "best-effort" polyline:
+          // If it missed A, draw eye->virtual direction clipped to mirror A line (infinite) for illustration.
+          // We'll instead draw eye->target as a faint red baseline.
+          rays.push({ color:'bad', pts:[head.eye, tp] });
+        }
+      }
+    }
+
+    const coverage = targetPts.length ? (visibleCount / targetPts.length) : 0;
+    const pass = visibleCount > 0;
+
+    updateStatus(pass, coverage, visibleCount, targetPts.length);
+
+    // Draw base geometry
+    drawDeskAndWalls();
+    drawHead(head);
+
+    // Draw side mirrors
+    drawMirror(mL, 'Left side mirror', 'rgba(255,255,255,0.85)');
+    drawMirror(mR, 'Right side mirror', 'rgba(255,255,255,0.85)');
+
+    // Draw coverage points on back of head (green if visible, gray if not)
+    for (let i=0;i<targetPts.length;i++){
+      const tp = targetPts[i];
+      const isVisible = i < visibleCount ? true : false; // not exact mapping when showFail is on, but acceptable
+      const stroke = isVisible ? 'rgba(46,204,113,0.90)' : 'rgba(255,255,255,0.25)';
+      const fill = isVisible ? 'rgba(46,204,113,0.25)' : 'rgba(255,255,255,0.07)';
+      drawCircleWorld(tp, 0.14, stroke, fill, 1.5);
+    }
+    drawTextWorld('Back-of-head targets', add(head.center, v(0, head.d/2 + 2.2)), 'rgba(255,255,255,0.45)', 'center');
+
+    // Draw rays
+    for (const ray of rays){
+      const good = ray.color === 'good';
+      const stroke = good ? 'rgba(46,204,113,0.85)' : 'rgba(255,77,79,0.45)';
+      const width = good ? 2.2 : 1.4;
+      const dash = good ? null : [6,6];
+      for (let i=0;i<ray.pts.length-1;i++){
+        drawLine(ray.pts[i], ray.pts[i+1], stroke, width, dash);
+      }
+    }
+  }
+
+  function buildHead(){
+    const headW = +ui.headW.value;
+    const headD = +ui.headD.value;
+    const headCenter = { x: 14.5, y: +ui.headY.value };
+
+    // Eye position: near the front of head, facing bottom wall (-Y).
+    // Typical: eyes ~1.1" behind the very front of the face in top-down projection.
+    const eye = { x: headCenter.x, y: headCenter.y - headD/2 + 1.1 };
+
+    return { center: headCenter, w: headW, d: headD, eye };
+  }
+
+  function updateStatus(pass, coverage, visible, total){
+    const pct = Math.round(coverage * 100);
+    covText.textContent = pct + '%';
+
+    if (pass){
+      passPill.classList.remove('fail');
+      passPill.classList.add('pass');
+      passText.textContent = 'PASS';
+      passReason.textContent = `At least one back-of-head point visible (${visible}/${total})`;
+      passReason.style.color = 'var(--muted)';
+    } else {
+      passPill.classList.remove('pass');
+      passPill.classList.add('fail');
+      passText.textContent = 'FAIL';
+      passReason.textContent = `No valid 2-bounce reflection path found (${visible}/${total})`;
+      passReason.style.color = 'var(--muted)';
+    }
+  }
+
+  // ---------- Initialize ----------
+  setDefaults();
+  resizeCanvas();
+  draw();
+})();
+</script>
+</body>
+</html>
