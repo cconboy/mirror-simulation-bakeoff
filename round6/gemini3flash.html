@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three-Mirror Makeup Station Simulator</title>
+    <!--
+        SIMULATION DESCRIPTION:
+        This tool validates a 3-mirror reflective path for a hair-styling station.
+        It calculates whether a seated person can see the back of their head via 
+        double-reflection (Eye -> Side Mirror -> Central Mirror -> Back of Head).
+
+        HOW TO USE IT:
+        1. Use the sliders to position the side mirrors and the person.
+        2. Adjust mirror angles (Yaw) to direct the reflection.
+        3. The simulation traces rays from the eyes. 
+        4. Success is determined by 'Back of Head' visibility coverage.
+        
+        SUCCESS CRITERIA:
+        - PASS: Green light and visible green rays reaching the posterior head.
+        - FAIL: Red light if no reflective path exists.
+        
+        GEOMETRIC ASSUMPTIONS:
+        - 1 unit = 1 inch (scaled to pixels).
+        - Law of Reflection: Angle of incidence = Angle of reflection.
+        - Person faces the wall (Down on canvas).
+        - Back of head is the top half of the head circle relative to the wall.
+    -->
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            color: #333;
+        }
+        #header {
+            background: #2c3e50;
+            color: white;
+            width: 100%;
+            padding: 15px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        #container {
+            display: flex;
+            flex-direction: row;
+            padding: 20px;
+            gap: 20px;
+            max-width: 1200px;
+        }
+        #controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type=range] {
+            width: 100%;
+        }
+        #viewport {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: relative;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #status {
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+        .pass { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .fail { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .legend {
+            font-size: 0.75rem;
+            margin-top: 10px;
+            color: #777;
+            line-height: 1.4;
+        }
+        span.val { font-weight: normal; float: right; color: #007bff; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <h2 style="margin:0">Mirror Geometry Validator</h2>
+</div>
+
+<div id="container">
+    <div id="controls">
+        <div id="status" class="fail">NO VISIBILITY</div>
+        
+        <div class="control-group">
+            <label>Left Mirror Pos (X) <span class="val" id="l_x_v">0</span></label>
+            <input type="range" id="l_x" min="0" max="29" step="0.5" value="3">
+        </div>
+        <div class="control-group">
+            <label>Left Mirror Angle <span class="val" id="l_a_v">0</span></label>
+            <input type="range" id="l_a" min="-180" max="180" step="1" value="45">
+        </div>
+        <hr>
+        <div class="control-group">
+            <label>Right Mirror Pos (X) <span class="val" id="r_x_v">0</span></label>
+            <input type="range" id="r_x" min="0" max="29" step="0.5" value="26">
+        </div>
+        <div class="control-group">
+            <label>Right Mirror Angle <span class="val" id="r_a_v">0</span></label>
+            <input type="range" id="r_a" min="-180" max="180" step="1" value="-45">
+        </div>
+        <hr>
+        <div class="control-group">
+            <label>Person Position (X) <span class="val" id="p_x_v">0</span></label>
+            <input type="range" id="p_x" min="5" max="24" step="0.5" value="14.5">
+        </div>
+        <div class="control-group">
+            <label>Person Lean (Dist to Wall) <span class="val" id="p_y_v">0</span></label>
+            <input type="range" id="p_y" min="8" max="18" step="0.5" value="13.75">
+        </div>
+        
+        <div class="legend">
+            <b>Target:</b> Eye → Side Mirror → Central Mirror → Back of Head.<br><br>
+            • Gray Box: Desk (29"x20")<br>
+            • Blue Lines: Mirrors<br>
+            • Green Rays: Successful Sightline<br>
+            • Red Rays: Blocked Path
+        </div>
+    </div>
+
+    <div id="viewport">
+        <canvas id="simCanvas" width="600" height="600"></canvas>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Constants (Inches)
+    const SCALE = 18; 
+    const OFFSET_X = 60;
+    const OFFSET_Y = 50;
+    const DESK_W = 29;
+    const DESK_D = 20;
+    const WALL_Y = 500; // Physical bottom wall in pixels
+    const SIDE_WALL_H = 11;
+    const CENTRAL_MIRROR_W = 23;
+    const CENTRAL_MIRROR_START_X = 7;
+    const SIDE_MIRROR_GLASS_W = 14;
+    const SIDE_MIRROR_TOTAL_W = 16;
+    const SIDE_MIRROR_PIVOT_OFFSET = 9;
+    const HEAD_RADIUS = 3.75; // Approx 7.5 inch diameter
+    const EYE_SPACING = 2.5;
+
+    // State
+    let state = {
+        l_x: 3, l_a: 45,
+        r_x: 26, r_a: -45,
+        p_x: 14.5, p_y: 13.75 // distance from wall to center of head
+    };
+
+    function updateInputs() {
+        state.l_x = parseFloat(document.getElementById('l_x').value);
+        state.l_a = parseFloat(document.getElementById('l_a').value);
+        state.r_x = parseFloat(document.getElementById('r_x').value);
+        state.r_a = parseFloat(document.getElementById('r_a').value);
+        state.p_x = parseFloat(document.getElementById('p_x').value);
+        state.p_y = parseFloat(document.getElementById('p_y').value);
+
+        document.getElementById('l_x_v').innerText = state.l_x + '"';
+        document.getElementById('l_a_v').innerText = state.l_a + '°';
+        document.getElementById('r_x_v').innerText = state.r_x + '"';
+        document.getElementById('r_a_v').innerText = state.r_a + '°';
+        document.getElementById('p_x_v').innerText = state.p_x + '"';
+        document.getElementById('p_y_v').innerText = state.p_y + '"';
+    }
+
+    function toPX(inchesX, inchesY) {
+        return {
+            x: OFFSET_X + inchesX * SCALE,
+            y: WALL_Y - inchesY * SCALE
+        };
+    }
+
+    function getMirrorCoords(pivotX, angleDeg) {
+        const angleRad = (angleDeg - 90) * Math.PI / 180;
+        const halfW = SIDE_MIRROR_GLASS_W / 2;
+        const pivotY = SIDE_MIRROR_PIVOT_OFFSET;
+        
+        return {
+            x1: pivotX + Math.cos(angleRad) * halfW,
+            y1: pivotY + Math.sin(angleRad) * halfW,
+            x2: pivotX - Math.cos(angleRad) * halfW,
+            y2: pivotY - Math.sin(angleRad) * halfW,
+            nx: Math.cos(angleRad + Math.PI/2),
+            ny: Math.sin(angleRad + Math.PI/2)
+        };
+    }
+
+    function intersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (den === 0) return null;
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+        }
+        return null;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        updateInputs();
+
+        // 1. Draw Environment
+        const deskTL = toPX(0, DESK_D);
+        const deskBR = toPX(DESK_W, 0);
+        ctx.fillStyle = "#e9ecef";
+        ctx.fillRect(deskTL.x, deskTL.y, deskBR.x - deskTL.x, deskBR.y - deskTL.y);
+
+        // Walls
+        ctx.strokeStyle = "#333";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        // Back wall
+        const w1 = toPX(-5, 0); const w2 = toPX(35, 0);
+        ctx.moveTo(w1.x, w1.y); ctx.lineTo(w2.x, w2.y);
+        // Side wall
+        const sw1 = toPX(0, 0); const sw2 = toPX(0, SIDE_WALL_H);
+        ctx.moveTo(sw1.x, sw1.y); ctx.lineTo(sw2.x, sw2.y);
+        ctx.stroke();
+
+        // Central Mirror
+        const cm1 = toPX(CENTRAL_MIRROR_START_X, 0);
+        const cm2 = toPX(CENTRAL_MIRROR_START_X + CENTRAL_MIRROR_W, 0);
+        ctx.strokeStyle = "#007bff";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(cm1.x, cm1.y); ctx.lineTo(cm2.x, cm2.y);
+        ctx.stroke();
+
+        // Side Mirrors
+        const mLeft = getMirrorCoords(state.l_x, state.l_a);
+        const mRight = getMirrorCoords(state.r_x, state.r_a);
+
+        function drawMirror(m) {
+            const p1 = toPX(m.x1, m.y1);
+            const p2 = toPX(m.x2, m.y2);
+            ctx.strokeStyle = "#007bff";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+            // Normal (indicates reflective side)
+            const midX = (p1.x + p2.x)/2; const midY = (p1.y + p2.y)/2;
+            ctx.beginPath();
+            ctx.moveTo(midX, midY);
+            ctx.lineTo(midX + m.nx * 10, midY - m.ny * 10);
+            ctx.strokeStyle = "#007bff88";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        drawMirror(mLeft);
+        drawMirror(mRight);
+
+        // Person
+        const headCenter = { x: state.p_x, y: state.p_y };
+        const headPX = toPX(headCenter.x, headCenter.y);
+        ctx.fillStyle = "#ffdbac";
+        ctx.beginPath();
+        ctx.arc(headPX.x, headPX.y, HEAD_RADIUS * SCALE, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#8d5524";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Eyes
+        const eyeY = state.p_y - 3.0; // Slightly towards wall
+        const eyeLX = state.p_x - EYE_SPACING/2;
+        const eyeRX = state.p_x + EYE_SPACING/2;
+        const eLPX = toPX(eyeLX, eyeY);
+        const eRPX = toPX(eyeRX, eyeY);
+        ctx.fillStyle = "black";
+        ctx.beginPath(); ctx.arc(eLPX.x, eLPX.y, 2, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(eRPX.x, eRPX.y, 2, 0, 7); ctx.fill();
+
+        // --- Ray Tracing Logic ---
+        let visibleCount = 0;
+        const rayDensity = 40;
+        const mirrors = [mLeft, mRight];
+        
+        const eyes = [{x: eyeLX, y: eyeY}, {x: eyeRX, y: eyeY}];
+
+        eyes.forEach(eye => {
+            mirrors.forEach(sm => {
+                for(let i=0; i <= rayDensity; i++) {
+                    const t = i / rayDensity;
+                    const targetX = sm.x1 + (sm.x2 - sm.x1) * t;
+                    const targetY = sm.y1 + (sm.y2 - sm.y1) * t;
+
+                    // Ray 1: Eye to Side Mirror
+                    const ray1 = {x1: eye.x, y1: eye.y, x2: targetX, y2: targetY};
+                    
+                    // Reflection at Side Mirror
+                    const dx = targetX - eye.x;
+                    const dy = targetY - eye.y;
+                    const mag = Math.sqrt(dx*dx + dy*dy);
+                    const vx = dx/mag; const vy = dy/mag;
+                    const dot = vx * sm.nx + vy * sm.ny;
+                    
+                    // Only reflect if hitting the inner (front) side
+                    if (dot < 0) {
+                        const rx = vx - 2 * dot * sm.nx;
+                        const ry = vy - 2 * dot * sm.ny;
+                        
+                        // Ray 2: From side mirror to Central Mirror (at y=0)
+                        // Central mirror is between X=7 and X=30, at Y=0
+                        if (ry < 0) { // Moving towards wall
+                            const distToWall = targetY / -ry;
+                            const hitX = targetX + rx * distToWall;
+                            
+                            if (hitX >= CENTRAL_MIRROR_START_X && hitX <= CENTRAL_MIRROR_START_X + CENTRAL_MIRROR_W) {
+                                // Hits central mirror! Reflect again.
+                                // Normal of central mirror is (0, 1)
+                                const r2x = rx;
+                                const r2y = -ry;
+                                
+                                // Ray 3: From central mirror to head
+                                // Check if this ray intersects the "back of head"
+                                // We'll simplify: does it pass within HEAD_RADIUS of headCenter
+                                // and is it behind the face (y > p_y)?
+                                
+                                // Parametric line: P = [hitX, 0] + d * [r2x, r2y]
+                                // Distance from point to line formula
+                                const px = headCenter.x - hitX;
+                                const py = headCenter.y - 0;
+                                const proj = px * r2x + py * r2y;
+                                if (proj > 0) {
+                                    const closeX = hitX + r2x * proj;
+                                    const closeY = 0 + r2y * proj;
+                                    const distSq = Math.pow(closeX - headCenter.x, 2) + Math.pow(closeY - headCenter.y, 2);
+                                    
+                                    if (distSq < Math.pow(HEAD_RADIUS, 2)) {
+                                        // Intersection found. Is it on the "back" of the head?
+                                        // Back is further from mirror than the center
+                                        // Since mirror is at Y=0, back is Y > p_y
+                                        
+                                        // For visual, we trace the segments
+                                        const p1 = toPX(eye.x, eye.y);
+                                        const p2 = toPX(targetX, targetY);
+                                        const p3 = toPX(hitX, 0);
+                                        
+                                        // Final point on head circle
+                                        const headHitDist = proj - Math.sqrt(Math.pow(HEAD_RADIUS,2) - distSq);
+                                        const hX = hitX + r2x * headHitDist;
+                                        const hY = 0 + r2y * headHitDist;
+                                        const p4 = toPX(hX, hY);
+
+                                        if (hY > state.p_y - 1) { // Viewing posterior side
+                                            ctx.strokeStyle = "rgba(40, 167, 69, 0.3)";
+                                            visibleCount++;
+                                            ctx.beginPath();
+                                            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+                                            ctx.lineTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y);
+                                            ctx.stroke();
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Draw red ray for "missed central mirror"
+                                const p1 = toPX(eye.x, eye.y);
+                                const p2 = toPX(targetX, targetY);
+                                const p3 = toPX(targetX + rx * 5, targetY + ry * 5);
+                                ctx.strokeStyle = "rgba(220, 53, 69, 0.05)";
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+                                ctx.lineTo(p3.x, p3.y);
+                                ctx.stroke();
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        // Update UI
+        const status = document.getElementById('status');
+        if (visibleCount > 0) {
+            status.innerText = "PASS: BACK OF HEAD VISIBLE";
+            status.className = "pass";
+        } else {
+            status.innerText = "FAIL: NO PATH FOUND";
+            status.className = "fail";
+        }
+
+        requestAnimationFrame(draw);
+    }
+
+    // Start
+    draw();
+</script>
+
+</body>
+</html>
